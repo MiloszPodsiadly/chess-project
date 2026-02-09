@@ -196,7 +196,14 @@ Run:
 
 ---
 
-## License
+## 👤 Maintainer
 
-TBD (commercial-ready).  
-Before distributing Stockfish WASM, confirm licensing requirements for binaries/WASM builds.
+**Milosz Podsiadly**  
+📧 [m.podsiadly99@gmail.com](mailto:m.podsiadly99@gmail.com)  
+🔗 [GitHub – MiloszPodsiadly](https://github.com/MiloszPodsiadly)
+
+---
+
+## 🪪 License
+
+Licensed under the [MIT License](https://opensource.org/licenses/MIT).
