@@ -1,0 +1,5 @@
+rootProject.name = 'chess-project'
+
+include 'chess-engine'
+include 'chess-domain'
+include 'chess-server'
