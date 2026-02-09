@@ -10,7 +10,6 @@ FROM eclipse-temurin:21-jre
 RUN groupadd -r app && useradd -r -g app -s /usr/sbin/nologin app
 WORKDIR /app
 
-# kopiujemy gotowego jar'a z modułu chess-server
 COPY --from=build /workspace/chess-server/build/libs/*.jar app.jar
 
 RUN chown -R app:app /app
