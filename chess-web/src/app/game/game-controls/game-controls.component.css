@@ -1,0 +1,23 @@
+.status {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #2b3241;
+  background: #0d1118;
+  font-size: 12px;
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid #2d3545;
+  color: #d7dfeb;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}

@@ -1,0 +1,55 @@
+.moves {
+  max-height: 170px;
+  overflow-y: auto;
+  display: grid;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.move-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: rgba(8, 14, 20, 0.35);
+}
+
+.move-no {
+  font-size: 11px;
+  color: #9ba7b8;
+  text-align: center;
+}
+
+.move-cell {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(10, 20, 30, 0.6);
+  border: 1px solid rgba(40, 60, 80, 0.5);
+  color: #dfe6f3;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
+
+.move-cell.white {
+  background: rgba(220, 230, 240, 0.08);
+  border-color: rgba(160, 190, 220, 0.4);
+  color: #edf3fb;
+}
+
+.move-cell.black {
+  background: rgba(12, 16, 24, 0.7);
+  border-color: rgba(40, 70, 90, 0.55);
+  color: #cfe1f4;
+}
+
+.move-cell.active {
+  border-color: rgba(125, 200, 255, 0.8);
+  box-shadow: 0 0 12px rgba(125, 200, 255, 0.35);
+  color: #ffffff;
+}

@@ -1,0 +1,11 @@
+<div class="moves">
+  <div class="move-row" *ngFor="let row of rows">
+    <span class="move-no">{{ row.moveNumber }}</span>
+    <div class="move-cell white" [class.active]="row.whiteIndex === activeIndex">
+      {{ row.white?.san || '--' }}
+    </div>
+    <div class="move-cell black" [class.active]="row.blackIndex === activeIndex">
+      {{ row.black?.san || '--' }}
+    </div>
+  </div>
+</div>

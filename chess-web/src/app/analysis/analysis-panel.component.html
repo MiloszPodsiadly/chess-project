@@ -1,0 +1,52 @@
+<div class="analysis-header">
+  <div>
+    <h2>Analysis</h2>
+    <div class="analysis-subtitle">Stockfish local engine</div>
+  </div>
+  <div class="analysis-actions">
+    <span class="source-chip" [class.external]="analysis.external$ | async">
+      {{ (analysis.external$ | async) ? 'Server' : 'Local' }}
+    </span>
+    <button class="ghost" (click)="analysis.toggleHints()">
+      {{ (analysis.enabled$ | async) ? 'Hide hints' : 'Show hints' }}
+    </button>
+  </div>
+</div>
+
+<div class="analysis-body" [class.hidden]="!(analysis.enabled$ | async)">
+  <div class="analysis-main">
+    <div class="analysis-summary">
+      <div class="summary-card eval">
+        <div class="label">Evaluation</div>
+        <div class="value">{{ analysis.evaluation$ | async }}</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Best move</div>
+        <div class="value">{{ (analysis.bestMoveSan$ | async) || (analysis.bestMove$ | async) || '--' }}</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Depth</div>
+        <div class="value">{{ (analysis.depth$ | async) ?? '--' }}</div>
+      </div>
+    </div>
+
+    <div class="analysis-metrics">
+      <div class="metric">
+        <span class="label">Nodes</span>
+        <span class="value">{{ formatCount(analysis.nodes$ | async) }}</span>
+      </div>
+      <div class="metric">
+        <span class="label">NPS</span>
+        <span class="value">{{ formatCount(analysis.nps$ | async) }}</span>
+      </div>
+    </div>
+
+    <div class="analysis-lines">
+      <div class="line" *ngFor="let line of (analysis.lines$ | async); let i = index" [class.best]="i === 0">
+        <span class="move-san">{{ line.move }}</span>
+        <span class="score">{{ line.score }}</span>
+        <span class="pv">{{ line.pvSan || line.pv }}</span>
+      </div>
+    </div>
+  </div>
+</div>

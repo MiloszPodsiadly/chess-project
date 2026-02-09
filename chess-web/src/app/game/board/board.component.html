@@ -1,0 +1,23 @@
+<div class="board">
+  <ng-container *ngFor="let row of displayRows; let r = index; trackBy: trackByIndex">
+    <ng-container *ngFor="let piece of row; let f = index; trackBy: trackByIndex">
+      <button
+        class="square"
+        [class.dark]="(r + f) % 2 === 1"
+        [class.selected]="squareGrid[r][f] === selected"
+        [class.legal]="legalMovesSet.has(squareGrid[r][f])"
+        [class.last-move]="lastMove && (squareGrid[r][f] === lastMove.from || squareGrid[r][f] === lastMove.to)"
+        (click)="squareClick.emit(squareGrid[r][f])"
+      >
+        <img
+          class="piece-img"
+          *ngIf="assetGrid[r][f] as asset"
+          [src]="asset"
+          alt=""
+        />
+        <span class="coord" *ngIf="r === 7">{{ squareGrid[r][f][0] }}</span>
+        <span class="coord" *ngIf="f === 0">{{ squareGrid[r][f][1] }}</span>
+      </button>
+    </ng-container>
+  </ng-container>
+</div>

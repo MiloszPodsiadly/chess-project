@@ -1,0 +1,98 @@
+:host {
+  display: block;
+  width: 100%;
+  --board-size: 95%;
+}
+
+:host(.online-board) {
+  --board-size: 90%;
+}
+
+.board {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 0;
+  width: var(--board-size);
+  height: var(--board-size);
+  max-width: var(--board-size);
+  max-height: var(--board-size);
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 2px solid rgba(18, 34, 44, 0.9);
+  box-shadow:
+    0 30px 60px rgba(5, 10, 20, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  background: radial-gradient(circle at 10% 10%, rgba(30, 60, 80, 0.35), transparent 45%), #101821;
+}
+
+.square {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: none;
+  background: #eef1dc;
+  position: relative;
+  cursor: pointer;
+  transition: background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.square.dark {
+  background: #6f8f4f;
+}
+
+.square.selected {
+  box-shadow: inset 0 0 0 3px rgba(255, 213, 77, 0.85);
+}
+
+.square:hover {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.2);
+}
+
+.square.legal::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 213, 77, 0.7);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.square.last-move {
+  box-shadow: inset 0 0 0 2px rgba(32, 186, 255, 0.7);
+  animation: pulse-square 1.6s ease-in-out infinite;
+}
+
+.piece-img {
+  width: 88%;
+  height: 88%;
+  display: block;
+  margin: 0 auto;
+  pointer-events: none;
+  filter: drop-shadow(0 5px 6px rgba(0, 0, 0, 0.35));
+  object-fit: contain;
+}
+
+.coord {
+  position: absolute;
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.45);
+  bottom: 4px;
+  left: 6px;
+}
+
+@keyframes pulse-square {
+  0% {
+    box-shadow: inset 0 0 0 2px rgba(32, 186, 255, 0.7);
+  }
+  50% {
+    box-shadow: inset 0 0 0 2px rgba(32, 186, 255, 0.2);
+  }
+  100% {
+    box-shadow: inset 0 0 0 2px rgba(32, 186, 255, 0.7);
+  }
+}

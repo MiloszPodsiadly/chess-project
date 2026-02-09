@@ -1,0 +1,63 @@
+<div class="home-shell">
+  <aside class="side-nav">
+    <div class="brand">
+      <div class="logo">P</div>
+      <div>
+        <div class="name">{{ t('name') }}</div>
+        <div class="tagline">{{ t('tagline') }}</div>
+      </div>
+    </div>
+
+    <nav class="menu">
+      <a routerLink="/game" [queryParams]="{ mode: 'bot' }" class="menu-item">
+        <span class="dot"></span>
+        <div>
+          <div class="label">{{ t('playBot') }}</div>
+          <div class="desc">{{ t('botDesc') }}</div>
+        </div>
+      </a>
+      <a routerLink="/game" [queryParams]="{ mode: 'online' }" class="menu-item">
+        <span class="dot"></span>
+        <div>
+          <div class="label">{{ t('playOnline') }}</div>
+          <div class="desc">{{ t('onlineDesc') }}</div>
+        </div>
+      </a>
+    </nav>
+
+    <div class="side-footer">
+      <div class="muted">{{ t('tipsTitle') }}</div>
+      <ul>
+        <li>{{ t('tip1') }}</li>
+        <li>{{ t('tip2') }}</li>
+        <li>{{ t('tip3') }}</li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="hero">
+    <div class="hero-card">
+      <div class="hero-text">
+        <div class="language-toggle">
+          <span>{{ t('langLabel') }}</span>
+          <button type="button" [class.active]="lang === 'en'" (click)="setLang('en')">EN</button>
+          <button type="button" [class.active]="lang === 'pl'" (click)="setLang('pl')">PL</button>
+        </div>
+        <h1>{{ t('heroTitle') }}</h1>
+        <p>
+          {{ t('heroCopy') }}
+        </p>
+        <div class="hero-actions">
+          <a routerLink="/game" [queryParams]="{ mode: 'bot' }" class="primary">{{ t('playBot') }}</a>
+          <a routerLink="/game" [queryParams]="{ mode: 'online' }" class="ghost">{{ t('playOnline') }}</a>
+        </div>
+      </div>
+      <div class="hero-board">
+        <div class="mini-board">
+          <div class="square" *ngFor="let square of squares" [class.dark]="square.dark"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+

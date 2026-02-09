@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45">
+  <defs>
+    <linearGradient id="wgrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbfaf6"/>
+      <stop offset="1" stop-color="#d7d2c7"/>
+    </linearGradient>
+    <linearGradient id="bgrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#414852"/>
+      <stop offset="1" stop-color="#1a2026"/>
+    </linearGradient>
+    <style>
+      .w-fill { fill: url(#wgrad); stroke: #1c232a; stroke-width: 1.4; }
+      .b-fill { fill: url(#bgrad); stroke: #0f1419; stroke-width: 1.4; }
+      .w-line { stroke: #1c232a; stroke-width: 1.2; fill: none; }
+      .b-line { stroke: #0f1419; stroke-width: 1.2; fill: none; }
+      .shadow { fill: rgba(0, 0, 0, 0.15); }
+    </style>
+  </defs>
+
+  <!-- Pawn -->
+  <symbol id="wp" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="38.5" rx="12" ry="2.5"/>
+    <circle class="w-fill" cx="22.5" cy="12" r="5"/>
+    <path class="w-fill" d="M18 18 h9 l2 7 h-13 z"/>
+    <path class="w-fill" d="M14 27 h17 l2.5 7 h-22 z"/>
+    <path class="w-fill" d="M11.5 33 h22 l2 7 h-26 z"/>
+  </symbol>
+  <symbol id="bp" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="38.5" rx="12" ry="2.5"/>
+    <circle class="b-fill" cx="22.5" cy="12" r="5"/>
+    <path class="b-fill" d="M18 18 h9 l2 7 h-13 z"/>
+    <path class="b-fill" d="M14 27 h17 l2.5 7 h-22 z"/>
+    <path class="b-fill" d="M11.5 33 h22 l2 7 h-26 z"/>
+  </symbol>
+
+  <!-- Rook -->
+  <symbol id="wr" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="13" ry="2.5"/>
+    <path class="w-fill" d="M11 10 h7 v6 h-7 z M19 10 h7 v6 h-7 z M27 10 h7 v6 h-7 z"/>
+    <path class="w-fill" d="M12.5 16 h20 l-1.5 6 h-17 z"/>
+    <path class="w-fill" d="M14 22 h17 l1.5 8 h-20 z"/>
+    <path class="w-fill" d="M11.5 32 h22 l2 7 h-26 z"/>
+  </symbol>
+  <symbol id="br" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="13" ry="2.5"/>
+    <path class="b-fill" d="M11 10 h7 v6 h-7 z M19 10 h7 v6 h-7 z M27 10 h7 v6 h-7 z"/>
+    <path class="b-fill" d="M12.5 16 h20 l-1.5 6 h-17 z"/>
+    <path class="b-fill" d="M14 22 h17 l1.5 8 h-20 z"/>
+    <path class="b-fill" d="M11.5 32 h22 l2 7 h-26 z"/>
+  </symbol>
+
+  <!-- Bishop -->
+  <symbol id="wb" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="12" ry="2.5"/>
+    <circle class="w-fill" cx="22.5" cy="10.5" r="3.8"/>
+    <path class="w-fill" d="M18 16 c4 -4 7 -4 9 0 c3 4 2 11 -4.5 15 c-6.5 -4 -7.5 -11 -4.5 -15 z"/>
+    <path class="w-line" d="M19 20 L26 27"/>
+    <path class="w-fill" d="M12 30 h21 l2.5 6 h-26 z"/>
+    <path class="w-fill" d="M11.5 33 h22 l2 7 h-26 z"/>
+  </symbol>
+  <symbol id="bb" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="12" ry="2.5"/>
+    <circle class="b-fill" cx="22.5" cy="10.5" r="3.8"/>
+    <path class="b-fill" d="M18 16 c4 -4 7 -4 9 0 c3 4 2 11 -4.5 15 c-6.5 -4 -7.5 -11 -4.5 -15 z"/>
+    <path class="b-line" d="M19 20 L26 27"/>
+    <path class="b-fill" d="M12 30 h21 l2.5 6 h-26 z"/>
+    <path class="b-fill" d="M11.5 33 h22 l2 7 h-26 z"/>
+  </symbol>
+
+  <!-- Knight -->
+  <symbol id="wn" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="12" ry="2.5"/>
+    <path class="w-fill" d="M14 31 l2 -12 l6 -8 l7 -3 l7 3 l-2 6 l-6 4 l2 6 l-3 4 z"/>
+    <path class="w-line" d="M21 14 l8 4"/>
+    <path class="w-line" d="M19 20 l10 5"/>
+    <path class="w-line" d="M22 11 l3 2"/>
+    <circle class="w-fill" cx="29.5" cy="12.5" r="1.1"/>
+  </symbol>
+  <symbol id="bn" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="12" ry="2.5"/>
+    <path class="b-fill" d="M14 31 l2 -12 l6 -8 l7 -3 l7 3 l-2 6 l-6 4 l2 6 l-3 4 z"/>
+    <path class="b-line" d="M21 14 l8 4"/>
+    <path class="b-line" d="M19 20 l10 5"/>
+    <path class="b-line" d="M22 11 l3 2"/>
+    <circle class="b-fill" cx="29.5" cy="12.5" r="1.1"/>
+  </symbol>
+
+  <!-- Queen -->
+  <symbol id="wq" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="13" ry="2.5"/>
+    <circle class="w-fill" cx="12" cy="14" r="3"/>
+    <circle class="w-fill" cx="22.5" cy="9.5" r="3.6"/>
+    <circle class="w-fill" cx="33" cy="14" r="3"/>
+    <path class="w-fill" d="M14 17 h17 l-2 11 h-13 z"/>
+    <path class="w-fill" d="M12.5 27 h20 l2.5 6 h-25 z"/>
+    <path class="w-fill" d="M11.5 33 h22 l2 7 h-26 z"/>
+  </symbol>
+  <symbol id="bq" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="13" ry="2.5"/>
+    <circle class="b-fill" cx="12" cy="14" r="3"/>
+    <circle class="b-fill" cx="22.5" cy="9.5" r="3.6"/>
+    <circle class="b-fill" cx="33" cy="14" r="3"/>
+    <path class="b-fill" d="M14 17 h17 l-2 11 h-13 z"/>
+    <path class="b-fill" d="M12.5 27 h20 l2.5 6 h-25 z"/>
+    <path class="b-fill" d="M11.5 33 h22 l2 7 h-26 z"/>
+  </symbol>
+
+  <!-- King -->
+  <symbol id="wk" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="13" ry="2.5"/>
+    <path class="w-fill" d="M20 7 h5 v8 h-5 z"/>
+    <path class="w-fill" d="M17 10 h11 v3 h-11 z"/>
+    <path class="w-fill" d="M14 17 h17 l-2 11 h-13 z"/>
+    <path class="w-fill" d="M12.5 27 h20 l2.5 6 h-25 z"/>
+    <path class="w-fill" d="M11.5 33 h22 l2 7 h-26 z"/>
+  </symbol>
+  <symbol id="bk" viewBox="0 0 45 45">
+    <ellipse class="shadow" cx="22.5" cy="39" rx="13" ry="2.5"/>
+    <path class="b-fill" d="M20 7 h5 v8 h-5 z"/>
+    <path class="b-fill" d="M17 10 h11 v3 h-11 z"/>
+    <path class="b-fill" d="M14 17 h17 l-2 11 h-13 z"/>
+    <path class="b-fill" d="M12.5 27 h20 l2.5 6 h-25 z"/>
+    <path class="b-fill" d="M11.5 33 h22 l2 7 h-26 z"/>
+  </symbol>
+</svg>

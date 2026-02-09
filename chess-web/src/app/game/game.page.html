@@ -1,0 +1,495 @@
+<div class="game-shell" [class.no-header]="botMode || onlineMode">
+  <header class="game-header" *ngIf="!(botMode || onlineMode)">
+    <div>
+      <div class="title">{{ t('localGame') }}</div>
+      <div class="subtitle">{{ t('subtitle') }}</div>
+    </div>
+    <app-game-controls
+      [turn]="state.sideToMove$ | async"
+      [status]="state.status$ | async"
+      [multiplayerGameId]="(multiplayer.gameState$ | async)?.gameId ?? null"
+      (reset)="state.reset()"
+    />
+  </header>
+
+  <div class="game-grid">
+    <section class="left-panel">
+      <div class="info-card board-card">
+        <div class="board-shell" [class.locked]="isBoardLocked()">
+          <app-board
+            *ngIf="(state.fen$ | async) as fen"
+            [class.online-board]="onlineMode"
+            [fen]="fen"
+            [selected]="state.selectedSquare$ | async"
+            [legalMoves]="(state.legalMoves$ | async) || []"
+            [lastMove]="state.lastMove$ | async"
+            [orientation]="boardOrientation()"
+            (squareClick)="onSquareClick($event)"
+          />
+          <div class="board-lock" *ngIf="isBoardLocked()">
+            <div class="lock-card">
+              <div class="lock-title">{{ boardLockTitle() }}</div>
+              <div class="lock-subtitle">{{ boardLockSubtitle() }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <section class="right-panel" [class.online-layout]="onlineMode">
+      <div class="info-card settings-card" *ngIf="showBotSetup || (onlineMode && !(multiplayer.gameState$ | async))">
+        <div class="online-controls" *ngIf="onlineMode && !(multiplayer.gameState$ | async)">
+          <div class="setup-header">
+            <div class="setup-icon online">W</div>
+            <div>
+              <div class="setup-title">{{ t('onlineSetup') }}</div>
+              <div class="setup-subtitle">{{ t('onlineSetupSubtitle') }}</div>
+            </div>
+          </div>
+          <div class="segmented tabs">
+            <button type="button" [class.active]="onlineView === 'public'" (click)="setOnlineView('public')">
+              {{ t('publicTab') }}
+            </button>
+            <button type="button" [class.active]="onlineView === 'create'" (click)="setOnlineView('create')">
+              {{ t('createTab') }}
+            </button>
+            <button type="button" [class.active]="onlineView === 'join'" (click)="setOnlineView('join')">
+              {{ t('joinTab') }}
+            </button>
+            <button type="button" [class.active]="onlineView === 'manage'" (click)="setOnlineView('manage')">
+              {{ t('manageTab') }}
+            </button>
+          </div>
+          <label>
+            {{ t('username') }}
+            <input type="text" [(ngModel)]="onlineUsername" [placeholder]="t('guestPlaceholder')" />
+          </label>
+          <div class="online-actions">
+            <!-- auto-connect enabled; controls hidden -->
+          </div>
+          <div class="room-list" *ngIf="onlineView === 'public'">
+            <div class="room-list-header">
+              <span>{{ t('publicRooms') }}</span>
+              <span class="room-status" *ngIf="multiplayer.connected$ | async as connected">
+                {{ connected ? t('connected') : t('disconnected') }}
+              </span>
+              <button type="button" class="ghost" (click)="onlineView = 'create'">{{ t('createRoom') }}</button>
+            </div>
+            <div class="room-row" *ngFor="let room of (multiplayer.publicRooms$ | async)">
+              <div>
+                <div class="room-name">{{ room.name || room.roomCode }}</div>
+                <div class="room-meta">
+                  {{ t('host') }}: {{ isOwnRoom(room) ? t('you') : (room.hostUsername || t('guest')) }} - {{ room.timeControlType }} - {{ room.currentPlayers }}/2 - {{ room.status }}
+                </div>
+              </div>
+              <div class="room-actions">
+                  <button
+                    type="button"
+                    class="ghost"
+                    [disabled]="room.status !== 'OPEN' || isOwnRoom(room) || hasActiveRoom()"
+                    (click)="onlineRoomCode = room.roomCode; joinOnlineRoom()"
+                  >
+                    {{ t('joinRoom') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="ghost"
+                    *ngIf="isActiveRoom(room.roomCode)"
+                    (click)="multiplayer.leaveRoom()"
+                  >
+                    {{ t('leaveRoom') }}
+                  </button>
+                <button
+                  type="button"
+                  class="ghost"
+                  *ngIf="room.status === 'IN_GAME'"
+                  (click)="multiplayer.spectateRoom(room.roomCode)"
+                >
+                  {{ t('spectate') }}
+                </button>
+              </div>
+            </div>
+            <div class="room-empty" *ngIf="(multiplayer.publicRooms$ | async)?.length === 0">
+              {{ t('noPublicRooms') }}
+            </div>
+          </div>
+          <div class="room-list" *ngIf="onlineView === 'create'">
+            <label>
+              {{ t('timeControl') }}
+              <select [(ngModel)]="onlineTimeControl">
+                <option value="BULLET">BULLET</option>
+                <option value="BLITZ">BLITZ</option>
+                <option value="RAPID">RAPID</option>
+                <option value="CLASSICAL">CLASSICAL</option>
+                <option value="UNTIMED">UNTIMED</option>
+              </select>
+            </label>
+            <label>
+              {{ t('roomName') }}
+              <input type="text" [(ngModel)]="onlineRoomName" [placeholder]="t('roomNamePlaceholder')" />
+            </label>
+            <label class="toggle">
+              <span>{{ t('publicRoom') }}</span>
+              <input type="checkbox" [(ngModel)]="onlinePublicRoom" />
+            </label>
+            <label *ngIf="!onlinePublicRoom">
+              {{ t('roomPassword') }}
+              <input type="text" [(ngModel)]="onlineRoomPassword" [placeholder]="t('roomPasswordPlaceholder')" />
+            </label>
+            <div class="online-actions">
+              <button type="button" class="primary" (click)="createOnlineRoom()">{{ t('createRoom') }}</button>
+              <button type="button" class="ghost" (click)="startOnlineMatchmaking()">{{ t('quickStart') }}</button>
+            </div>
+          </div>
+          <div class="room-list" *ngIf="onlineView === 'join'">
+            <label>
+              {{ t('roomCode') }}
+              <input type="text" [(ngModel)]="onlineRoomCode" [placeholder]="t('roomCodePlaceholder')" />
+            </label>
+            <label>
+              {{ t('joinPassword') }}
+              <input type="text" [(ngModel)]="onlineJoinPassword" [placeholder]="t('joinPasswordPlaceholder')" />
+            </label>
+            <div class="online-actions">
+              <button type="button" class="primary" (click)="joinOnlineRoom()">{{ t('joinRoom') }}</button>
+            </div>
+          </div>
+          <div class="invite-box" *ngIf="onlineView === 'manage' && (multiplayer.roomCode$ | async) as createdCode">
+            <div class="invite-header">
+              <div class="invite-title">{{ t('inviteCreated') }}</div>
+              <div class="invite-actions">
+                <button
+                  type="button"
+                  class="primary"
+                  *ngIf="isHostInRoom() && hasPendingPlayer()"
+                  (click)="startRoomGame(createdCode)"
+                >
+                  {{ t('startGame') }}
+                </button>
+                <button
+                  class="ghost"
+                  *ngIf="isHostInRoom() && !hasPendingPlayer()"
+                  disabled
+                >
+                  {{ t('waitingForPlayer') }}
+                </button>
+                <button
+                  class="ghost"
+                  *ngIf="isHostInRoom()"
+                  (click)="multiplayer.deleteRoom(createdCode)"
+                >
+                  {{ t('deleteRoom') }}
+                </button>
+              </div>
+            </div>
+            <div class="invite-meta">
+              {{ t('roomCode') }}: <strong>{{ createdCode }}</strong>
+            </div>
+            <div class="room-manage" *ngIf="isHostInRoom()">
+              <div class="manage-title">{{ t('roomMembers') }}</div>
+              <div class="manage-row" *ngFor="let participant of (multiplayer.roomParticipants$ | async)">
+                <div class="manage-name">
+                  {{ participant.username || t('guest') }}
+                  <span class="chip small">{{ participant.role }}</span>
+                  <span class="chip small" *ngIf="participant.status">{{ participant.status }}</span>
+                  <span class="chip small visibility" *ngIf="(participant.role || '').toUpperCase() === 'HOST'">
+                    {{ roomVisibilityLabel() }}
+                  </span>
+                </div>
+                <button
+                  class="ghost"
+                  *ngIf="canKickParticipant(participant)"
+                  (click)="multiplayer.kickPlayer(createdCode, participant.username || '')"
+                >
+                  {{ t('removePlayer') }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="invite-box" *ngIf="onlineView === 'manage' && hasActiveRoom() && !(multiplayer.roomCode$ | async)">
+            <div class="invite-header">
+              <div class="invite-title">{{ t('yourRoom') }}</div>
+              <div class="invite-actions">
+                <button class="ghost" (click)="multiplayer.leaveRoom()">{{ t('leaveRoom') }}</button>
+              </div>
+            </div>
+            <div class="invite-meta">
+              {{ t('roomCode') }}: <strong>{{ multiplayer.activeRoomCode$ | async }}</strong>
+            </div>
+            <div class="room-manage">
+              <div class="manage-title">{{ t('roomMembers') }}</div>
+              <div class="manage-row" *ngFor="let participant of (multiplayer.roomParticipants$ | async)">
+                <div class="manage-name">
+                  {{ participant.username || t('guest') }}
+                  <span class="chip small">{{ participant.role }}</span>
+                  <span class="chip small" *ngIf="participant.status">{{ participant.status }}</span>
+                  <span class="chip small visibility" *ngIf="(participant.role || '').toUpperCase() === 'HOST'">
+                    {{ roomVisibilityLabel() }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="invite-box" *ngIf="onlineView === 'manage' && !hasActiveRoom()">
+            <div class="invite-title">{{ t('noActiveRoomTitle') }}</div>
+            <div class="invite-meta">{{ t('noActiveRoomSubtitle') }}</div>
+          </div>
+          <div class="error" *ngIf="(multiplayer.lastError$ | async) as err">
+            {{ onlineErrorMessage(err) }}
+          </div>
+        </div>
+        <div class="bot-controls" *ngIf="showBotSetup">
+          <div class="setup-header">
+            <div class="setup-icon">S</div>
+            <div>
+              <div class="setup-title">{{ t('botSetup') }}</div>
+              <div class="setup-subtitle">{{ t('botSetupSubtitle') }}</div>
+            </div>
+          </div>
+          <div class="bot-grid">
+            <label>
+              {{ t('botPlayAs') }}
+              <div class="segmented">
+                <button type="button" [class.active]="botSideChoice === 'w'" (click)="botSideChoice = 'w'">
+                  {{ t('white') }}
+                </button>
+                <button type="button" [class.active]="botSideChoice === 'b'" (click)="botSideChoice = 'b'">
+                  {{ t('black') }}
+                </button>
+                <button type="button" [class.active]="botSideChoice === 'random'" (click)="botSideChoice = 'random'">
+                  {{ t('botRandom') }}
+                </button>
+              </div>
+            </label>
+            <label>
+              {{ t('botSkill') }}
+              <div class="slider">
+                <input type="range" min="200" max="2000" step="200" [(ngModel)]="botElo" />
+                <div class="slider-meta">
+                  <span>{{ botElo }} Elo</span>
+                  <span class="chip">{{ botStrengthLabel() }}</span>
+                </div>
+              </div>
+            </label>
+          </div>
+          <div class="bot-profile">
+            <div class="profile-title">{{ t('botProfile') }}</div>
+            <div class="profile-grid">
+              <div class="profile-card">
+                <span class="label">{{ t('botDepth') }}</span>
+                <span class="value">{{ botProfile().depthCap }}</span>
+              </div>
+              <div class="profile-card">
+                <span class="label">{{ t('botMoveTime') }}</span>
+                <span class="value">{{ botMoveTimeLabel() }}</span>
+              </div>
+              <div class="profile-card">
+                <span class="label">{{ t('botBlunder') }}</span>
+                <span class="value">{{ botBlunderLabel() }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="setup-actions">
+            <button class="primary" (click)="startBotGame()">{{ t('startVsBot') }}</button>
+          </div>
+          <div class="bot-status" *ngIf="botThinking">{{ t('botThinking') }}</div>
+          <div class="bot-status ready" *ngIf="!botThinking && botEnabled">{{ t('botReady') }}</div>
+        </div>
+      </div>
+
+      <div class="info-card bot-actions-card" *ngIf="botMode && !showBotSetup">
+        <div class="card-header">
+          <div>
+            <h2>{{ t('botGameTitle') }}</h2>
+            <div class="card-subtitle">{{ botElo }} Elo · {{ botStrengthLabel() }}</div>
+          </div>
+          <div class="card-meta">
+            <span class="chip">{{ t('you') }}: {{ colorLabel(playerColor) }}</span>
+            <span class="chip">{{ t('botLabel') }}: {{ colorLabel(botColor) }}</span>
+          </div>
+        </div>
+        <div class="bot-actions">
+          <button class="primary" *ngIf="!botGameActive" (click)="startBotGame()">{{ t('startVsBot') }}</button>
+          <button class="ghost" *ngIf="botGameActive" (click)="restartBotGame()">{{ t('restartGame') }}</button>
+          <button class="ghost" (click)="exitToBotSetup()">{{ t('exitGame') }}</button>
+        </div>
+      </div>
+
+      <div class="info-card history-card" *ngIf="!onlineMode">
+        <div class="card-header">
+          <div>
+            <h2>{{ t('moveHistory') }}</h2>
+            <div class="card-subtitle">
+              {{ t('moveCount') }}: {{ (state.moves$ | async)?.length ?? 0 }}
+            </div>
+          </div>
+          <div class="card-meta">
+            <span class="chip">{{ t('moveWhiteLabel') }}</span>
+            <span class="chip">{{ t('moveBlackLabel') }}</span>
+            <span class="chip">{{ t('statusLabel') }} {{ state.status$ | async }}</span>
+          </div>
+        </div>
+        <app-move-history *ngIf="(state.moves$ | async) as moves" [moves]="moves" />
+      </div>
+
+      <div class="info-card analysis-card" *ngIf="!onlineMode">
+        <app-analysis-panel [evalHistory]="evalHistory" />
+      </div>
+
+      <div class="info-card online-actions-card" *ngIf="multiplayerGameActive()">
+        <div class="card-header">
+          <div>
+            <h2>{{ t('matchControls') }}</h2>
+            <div class="card-subtitle">
+              {{ (multiplayer.timeControl$ | async) || '-' }} · {{ (multiplayer.yourColor$ | async) || '-' }}
+            </div>
+          </div>
+          <div class="card-meta">
+            <span class="chip" *ngIf="isSpectator()">{{ t('spectator') }}</span>
+          </div>
+        </div>
+        <div class="clock-bar compact" *ngIf="multiplayer.gameState$ | async as game">
+          <ng-container *ngIf="multiplayer.yourColor$ | async as yourColor">
+            <div class="player-card">
+              <div class="player-name">{{ t('opponent') }}</div>
+              <div
+                class="player-clock"
+                [class.active]="(yourColor === 'WHITE' && game.sideToMove === 'BLACK') || (yourColor === 'BLACK' && game.sideToMove === 'WHITE')"
+                [class.low]="getOpponentClockMs(game) <= 10000"
+              >
+                {{ formatClock(getOpponentClockMs(game)) }}
+              </div>
+            </div>
+            <div class="player-card you">
+              <div class="player-name">{{ t('you') }}</div>
+              <div
+                class="player-clock"
+                [class.active]="(yourColor === 'WHITE' && game.sideToMove === 'WHITE') || (yourColor === 'BLACK' && game.sideToMove === 'BLACK')"
+                [class.low]="getYourClockMs(game) <= 10000"
+              >
+                {{ formatClock(getYourClockMs(game)) }}
+              </div>
+            </div>
+          </ng-container>
+        </div>
+        <div class="online-actions">
+          <button
+            class="ghost"
+            *ngIf="multiplayer.gameState$ | async as game"
+            (click)="multiplayer.resign(game.gameId)"
+          >
+            {{ t('resign') }}
+          </button>
+          <button
+            class="ghost"
+            *ngIf="multiplayer.gameState$ | async as game"
+            (click)="multiplayer.offerDraw(game.gameId)"
+          >
+            {{ t('offerDraw') }}
+          </button>
+        </div>
+      </div>
+
+      <div class="info-card room-preview" *ngIf="onlineMode">
+        <div class="card-header">
+          <div>
+            <h2>{{ t('chatTitle') }}</h2>
+            <div class="card-subtitle">
+              {{ (multiplayer.activeRoomCode$ | async) || t('chatSubtitleEmpty') }}
+            </div>
+          </div>
+        </div>
+        <ng-container *ngIf="multiplayer.activeRoomCode$ | async; else chatPreview">
+          <div class="chat-messages">
+            <div class="chat-message" *ngFor="let msg of (multiplayer.roomMessages$ | async)">
+              <span class="chat-user">{{ msg.username }}</span>
+              <span class="chat-text">{{ msg.message }}</span>
+              <span class="chat-time">{{ msg.createdAt | date: 'shortTime' }}</span>
+            </div>
+          </div>
+          <div class="chat-input">
+            <input
+              type="text"
+              [(ngModel)]="chatMessage"
+              [placeholder]="t('chatPlaceholder')"
+              (keyup.enter)="sendChatMessage()"
+            />
+            <button class="primary" (click)="sendChatMessage()">{{ t('send') }}</button>
+          </div>
+        </ng-container>
+        <ng-template #chatPreview>
+          <div class="preview-box">
+            <img class="preview-image" src="/assets/cartoon/batalla-piezas-de-ajedrez-en-castillo_By_DG-RA.svg" alt="Chess room preview" />
+          </div>
+        </ng-template>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="promotion-overlay" *ngIf="pendingPromotion">
+  <div class="promotion-modal">
+    <h3>{{ t('promotionTitle') }}</h3>
+    <div class="promo-grid">
+      <button
+        class="promo"
+        *ngFor="let piece of promotionOptions"
+        (click)="choosePromotion(piece)"
+      >
+        {{ piece.toUpperCase() }}
+      </button>
+    </div>
+    <button class="ghost" (click)="cancelPromotion()">{{ t('cancel') }}</button>
+  </div>
+</div>
+
+<div class="promotion-overlay" *ngIf="showBotResultOverlay()">
+  <div
+    class="promotion-modal result-modal bot-result"
+    [class.result-win]="botResultClass() === 'win'"
+    [class.result-loss]="botResultClass() === 'loss'"
+    [class.result-draw]="botResultClass() === 'draw'"
+  >
+    <h3>{{ botResultTitle() }}</h3>
+    <p>{{ botResultSubtitle() }}</p>
+    <div class="result-actions">
+      <button class="promo" (click)="restartBotGame()">{{ t('restartGame') }}</button>
+      <button class="ghost" (click)="exitToBotSetup()">{{ t('exitGame') }}</button>
+    </div>
+  </div>
+</div>
+
+<ng-container *ngIf="multiplayer.gameState$ | async as mpGame">
+  <div class="promotion-overlay" *ngIf="mpGame.result && mpGame.result !== 'ONGOING'">
+    <div
+      class="promotion-modal result-modal"
+      [class.result-win]="multiplayerResultClass() === 'win'"
+      [class.result-loss]="multiplayerResultClass() === 'loss'"
+      [class.result-draw]="multiplayerResultClass() === 'draw'"
+    >
+      <h3>{{ multiplayerResultTitle() }}</h3>
+      <p>{{ multiplayerEndReason() }}</p>
+      <div class="result-actions">
+        <button class="promo" (click)="multiplayer.leaveRoom()">{{ t('backToLobby') }}</button>
+      </div>
+    </div>
+  </div>
+</ng-container>
+
+<div class="promotion-overlay" *ngIf="multiplayer.drawOffer$ | async">
+  <div class="promotion-modal result-modal">
+    <h3>{{ t('drawOfferTitle') }}</h3>
+    <p>{{ t('drawOfferSubtitle') }}</p>
+    <div class="result-actions">
+      <button class="promo" *ngIf="multiplayer.gameState$ | async as game" (click)="multiplayer.acceptDraw(game.gameId)">
+        {{ t('acceptDraw') }}
+      </button>
+      <button class="ghost" *ngIf="multiplayer.gameState$ | async as game" (click)="multiplayer.declineDraw(game.gameId)">
+        {{ t('declineDraw') }}
+      </button>
+    </div>
+  </div>
+</div>
+
+
