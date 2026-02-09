@@ -1,0 +1,63 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/chessdb
+    username: user
+    password: password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-timeout: 60000
+      maximum-pool-size: 10
+  main:
+    allow-bean-definition-overriding: true
+    lazy-initialization: false
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+    show-sql: false
+  application:
+    name: chess-backend
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-check-this-secret-key-please-and-nearly-soon-move-too-env-files-as-JWT_SECRET}
+      expiration-minutes: ${JWT_EXP_MIN:120}
+  flyway:
+    enabled: false
+
+chess:
+  engine:
+    uci:
+      path: ${STOCKFISH_PATH:}
+      threads: ${STOCKFISH_THREADS:2}
+      hash-mb: ${STOCKFISH_HASH_MB:64}
+      multipv: ${STOCKFISH_MULTIPV:5}
+      ready-timeout-ms: ${STOCKFISH_READY_TIMEOUT_MS:3000}
+      search-timeout-ms: ${STOCKFISH_SEARCH_TIMEOUT_MS:5000}
+  matchmaking:
+    cleanup-ms: ${MATCHMAKING_CLEANUP_MS:60000}
+    room-ttl-minutes: ${ROOM_TTL_MINUTES:10}
+  multiplayer:
+    reconnect-timeout-ms: ${RECONNECT_TIMEOUT_MS:600000}
+    reconnect-timeout-check-ms: ${RECONNECT_TIMEOUT_CHECK_MS:30000}
+    clock-timeout-check-ms: ${CLOCK_TIMEOUT_CHECK_MS:1000}
+  analysis:
+    enabled: ${CHESS_ANALYSIS_ENABLED:false}
+    elo: ${CHESS_ANALYSIS_ELO:1600}
+    depth: ${CHESS_ANALYSIS_DEPTH:12}
+    time-ms: ${CHESS_ANALYSIS_TIME_MS:200}
+    max-lines: ${CHESS_ANALYSIS_MAX_LINES:3}
+
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    org.hibernate: WARN
+    org.hibernate.SQL: WARN
+    org.springframework.boot.autoconfigure: INFO
