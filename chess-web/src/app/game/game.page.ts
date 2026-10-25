@@ -10,19 +10,22 @@ import { MoveHistoryComponent } from './move-history/move-history.component';
 import { GameControlsComponent } from './game-controls/game-controls.component';
 import { AnalysisPanelComponent } from '../analysis/analysis-panel.component';
 import { BotEngineService } from '../bot/bot-engine.service';
-import { EngineGameApiService, ServerEngineGame, ServerEngineMode, StrengthPreset } from '../bot/engine-game-api.service';
+import { EngineGameApiService, EngineSessionExpiredError, ServerEngineGame, ServerEngineMode, StrengthPreset } from '../bot/engine-game-api.service';
 import { Chess } from 'chess.js';
 import { ActivatedRoute } from '@angular/router';
 import { TimeControlType } from '../multiplayer/models';
-import { EngineConfigMapper } from '../bot/engine-config-mapper';
 import { strengthCategory } from '../bot/strength-catalog';
+import { GameOutcome, serverOutcome } from './game-outcome';
+import { GameResultPanelComponent } from './game-result-panel/game-result-panel.component';
+import { BotSetupComponent } from './bot-setup/bot-setup.component';
 
 type PieceCode = string | null;
+type BotErrorScope = 'authentication' | 'configuration' | 'engine' | 'gameplay' | 'recovery';
 
 @Component({
   selector: 'app-game-page',
   standalone: true,
-  imports: [AsyncPipe, NgIf, NgForOf, DatePipe, FormsModule, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent],
+  imports: [AsyncPipe, NgIf, NgForOf, DatePipe, FormsModule, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent, GameResultPanelComponent, BotSetupComponent],
   templateUrl: './game.page.html',
   styleUrl: './game.page.css'
 })
@@ -33,16 +36,17 @@ export class GamePageComponent {
   botElo = 1200;
   botMaximum = false;
   botSidebarTab: 'analysis' | 'moves' | 'settings' = 'analysis';
-  botAuthMode: 'login' | 'register' = 'login';
-  readonly strengthChoices = [
-    { key: 'rookie', min: 200, max: 599, target: 400 },
-    { key: 'beginner', min: 600, max: 999, target: 800 },
-    { key: 'casual', min: 1000, max: 1319, target: 1200 },
-    { key: 'intermediate', min: 1320, max: 1799, target: 1500 },
-    { key: 'advanced', min: 1800, max: 2299, target: 2000 },
-    { key: 'expert', min: 2300, max: 2799, target: 2600 },
-    { key: 'master', min: 2800, max: 3190, target: 3000 }
-  ] as const;
+  onBotTabKeydown(event: KeyboardEvent) {
+    const tabs: Array<typeof this.botSidebarTab> = ['analysis', 'moves', 'settings'];
+    const index = tabs.indexOf(this.botSidebarTab);
+    const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+      : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    this.botSidebarTab = tabs[next];
+    (event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  }
   botColor: 'w' | 'b' = 'b';
   botSideChoice: 'w' | 'b' | 'random' = 'w';
   playerColor: 'w' | 'b' = 'w';
@@ -50,6 +54,7 @@ export class GamePageComponent {
   botMode = false;
   botThinking = false;
   botResigned = false;
+  dismissedOutcomeKey: string | null = null;
   botExecution: 'browser' | 'server' = 'browser';
   botEngineFlavor: 'lite' | 'full' = 'lite';
   analysisFlavor: 'lite' | 'full' = 'lite';
@@ -61,15 +66,31 @@ export class GamePageComponent {
   }
   serverMode: ServerEngineMode = 'BEGINNER';
   serverPreset: StrengthPreset = 'STRONG';
+  browserMaximumMs: 300 | 1000 | 3000 = 300;
   serverGame: ServerEngineGame | null = null;
-  botError = '';
-  botUsername = '';
-  botPassword = '';
-  botEmail = '';
+  botErrorState: { scope: BotErrorScope; message: string } | null = null;
+  get botError() { return this.botErrorState?.message ?? ''; }
+  set botError(message: string) {
+    this.botErrorState = message ? { scope: 'gameplay', message } : null;
+  }
+  private setBotError(scope: BotErrorScope, message: string) {
+    this.botErrorState = { scope, message };
+  }
+  private setRequestError(error: unknown, fallback: string, scope: BotErrorScope = 'gameplay') {
+    if (error instanceof EngineSessionExpiredError) {
+      this.setBotError('authentication', this.t('sessionExpired'));
+    } else {
+      this.setBotError(scope, error instanceof Error ? error.message : fallback);
+    }
+  }
   private botEpoch = 0;
   private serverTurnPoll: number | null = null;
   private serverPollFailures = 0;
   showBotSetup = false;
+  botPhase(): 'SETUP' | 'PLAYING' | 'FINISHED' {
+    if (!this.botGameActive || this.showBotSetup) return 'SETUP';
+    return this.botOutcome() ? 'FINISHED' : 'PLAYING';
+  }
   analysisEnabled = true;
   evalHistory: number[] = [];
   onlineMode = false;
@@ -98,6 +119,8 @@ export class GamePageComponent {
 
   readonly translations = {
     en: {
+      checkAlert: 'Check!',
+      checkmateAlert: 'Checkmate',
       localGame: 'Local Game',
       subtitle: 'Engine-powered bot, analysis, and FIDE rules',
       onlineSetup: 'Online setup',
@@ -181,7 +204,8 @@ export class GamePageComponent {
       unrestricted: 'Unrestricted Stockfish 19', customLevel: 'Custom level (200–3190)',
       account: 'Account', accountName: 'Username', email: 'Email', password: 'Password',
       authRequired: 'Enter username and password; email is also required to register.',
-      analysisTab: 'Analysis', movesTab: 'Moves', settingsTab: 'Settings', changeSetup: 'Change setup',
+      sessionExpired: 'Your server session expired. Sign in again.',
+      analysisTab: 'Analysis', movesTab: 'Moves', settingsTab: 'Settings',
       nativeEngine: 'Stockfish 19 Native',
       browserEngine: 'Stockfish.js 19 (guest)',
       guestDescription: 'Play locally without an account. Games are not saved on the server.',
@@ -251,6 +275,8 @@ export class GamePageComponent {
       cancel: 'Cancel'
     },
     pl: {
+      checkAlert: 'Szach!',
+      checkmateAlert: 'Mat',
       localGame: 'Gra lokalna',
       subtitle: 'Bot, analiza i zasady FIDE',
       onlineSetup: 'Ustawienia online',
@@ -334,7 +360,8 @@ export class GamePageComponent {
       unrestricted: 'Stockfish 19 bez ograniczeń', customLevel: 'Własny poziom (200–3190)',
       account: 'Konto', accountName: 'Nazwa użytkownika', email: 'Email', password: 'Hasło',
       authRequired: 'Podaj nazwę użytkownika i hasło; przy rejestracji także email.',
-      analysisTab: 'Analiza', movesTab: 'Ruchy', settingsTab: 'Ustawienia', changeSetup: 'Zmień ustawienia',
+      sessionExpired: 'Sesja na serwerze wygasła. Zaloguj się ponownie.',
+      analysisTab: 'Analiza', movesTab: 'Ruchy', settingsTab: 'Ustawienia',
       nativeEngine: 'Stockfish 19 na serwerze',
       browserEngine: 'Stockfish.js 19 (gosc)',
       guestDescription: 'Graj lokalnie bez konta. Partie nie sa zapisywane na serwerze.',
@@ -419,7 +446,6 @@ export class GamePageComponent {
     destroyRef.onDestroy(() => {
       this.destroyed = true;
       this.invalidateBotSession();
-      this.botEngine.dispose();
       this.analysis.stop();
       if (this.clockTimer) {
         window.clearInterval(this.clockTimer);
@@ -470,16 +496,15 @@ export class GamePageComponent {
           this.pendingServerMove = false;
           return;
         }
-        this.state.loadExternalState(
-          game.fen,
-          game.moves.map((m) => ({
-            san: `${m.from}-${m.to}${m.promotion ? `=${m.promotion}` : ''}`,
-            from: m.from,
-            to: m.to,
-            promotion: m.promotion ?? undefined
-          })),
-          game.sideToMove === 'WHITE' ? 'w' : 'b'
-        );
+        try {
+          this.state.loadExternalState(game.fen,
+            game.moves.map(m => ({ san: '', from: m.from, to: m.to,
+              promotion: m.promotion ?? undefined })),
+            game.sideToMove === 'WHITE' ? 'w' : 'b');
+        } catch (error) {
+          this.state.status$.next(error instanceof Error ? error.message : 'Invalid game history');
+          return;
+        }
         this.pendingServerMove = false;
         if (game.analysis) {
           this.analysis.applyExternalAnalysis(game.analysis, game.fen);
@@ -590,6 +615,8 @@ export class GamePageComponent {
           this.loadOnlineDefaults();
         }
         if (this.botMode) {
+          this.botErrorState = null;
+          void this.engineApi.validateSession().then(() => this.cdr.markForCheck());
           this.safeSessionRemove('onlineUsername');
           this.safeSessionRemove('onlineReconnect');
           this.onlineUsername = '';
@@ -600,7 +627,7 @@ export class GamePageComponent {
           this.evalHistory = [];
           if (this.botExecution === 'server') void this.resumeServerBotGame();
           else void this.botEngine.warm(this.botEngineFlavor).catch(error => {
-            if (!this.destroyed && this.showBotSetup) this.botError = error.message;
+            if (!this.destroyed && this.showBotSetup) this.setBotError('engine', error.message);
           });
         } else {
           this.botGameActive = false;
@@ -717,12 +744,11 @@ export class GamePageComponent {
     let move: string;
     try {
       move = await this.botEngine.getMove(fen, this.botMaximum ? null : this.botElo,
-        this.botEngineFlavor, this.serverPreset === 'DEEP_CHALLENGE' ? 60000
-          : this.serverPreset === 'ULTIMATE' ? 30000 : this.serverPreset === 'EXPERT' ? 10000 : 3000);
+        this.botEngineFlavor, this.browserMaximumMs);
     } catch (error) {
       if (epoch === this.botEpoch) {
         this.botThinking = false;
-        this.botError = error instanceof Error ? error.message : 'Browser engine failed';
+        this.setBotError('engine', error instanceof Error ? error.message : 'Browser engine failed');
       }
       return;
     }
@@ -738,7 +764,7 @@ export class GamePageComponent {
       candidate.from === from && candidate.to === to && (candidate.promotion ?? undefined) === promotion);
     if (!legal) {
       this.botThinking = false;
-      this.botError = 'Browser engine returned an illegal move';
+      this.setBotError('engine', 'Browser engine returned an illegal move');
       return;
     }
     const moved = this.state.attemptMove(from, to, promotion);
@@ -746,21 +772,6 @@ export class GamePageComponent {
       this.analysis.scheduleAnalyze(this.state.fen$.value);
     }
     this.botThinking = false;
-  }
-
-  async signInForEngine(register = false) {
-    this.botError = '';
-    if (!this.botUsername.trim() || !this.botPassword || (register && !this.botEmail.trim())) {
-      this.botError = this.t('authRequired');
-      return;
-    }
-    try {
-      await this.engineApi.authenticate(this.botUsername.trim(), this.botPassword,
-        register ? this.botEmail.trim() : undefined);
-      this.botPassword = '';
-    } catch (error) {
-      this.botError = error instanceof Error ? error.message : 'Sign in failed';
-    }
   }
 
   selectStrength(target: number) {
@@ -772,6 +783,11 @@ export class GamePageComponent {
   selectMaximum() {
     this.botMaximum = true;
     this.serverMode = 'FULL_STRENGTH';
+  }
+
+  onSetupStrength(target: number | null) {
+    if (target === null) this.selectMaximum();
+    else this.onCustomStrength(target);
   }
 
   onCustomStrength(value: number) {
@@ -795,13 +811,17 @@ export class GamePageComponent {
     } catch { return; }
     if (!id) return;
     try {
+      if (!await this.engineApi.validateSession()) {
+        if (epoch === this.botEpoch) this.setBotError('authentication', this.t('sessionExpired'));
+        return;
+      }
       const game = await this.engineApi.get(id);
       if (epoch === this.botEpoch && !this.destroyed && this.botExecution === 'server') {
         this.applyServerBotGame(game);
       }
     } catch (error) {
       if (epoch === this.botEpoch && !this.destroyed) {
-        this.botError = error instanceof Error ? error.message : 'Could not resume game';
+        this.setRequestError(error, 'Could not resume game', 'recovery');
       }
     }
   }
@@ -820,7 +840,7 @@ export class GamePageComponent {
       if (epoch === this.botEpoch && !this.destroyed) this.applyServerBotGame(response);
     } catch (error) {
       if (epoch !== this.botEpoch) return;
-      this.botError = error instanceof Error ? error.message : 'Move failed';
+      this.setRequestError(error, 'Move failed');
       try {
         const refreshed = await this.engineApi.get(game.gameId);
         if (epoch === this.botEpoch && !this.destroyed) this.applyServerBotGame(refreshed);
@@ -831,6 +851,20 @@ export class GamePageComponent {
   }
 
   private applyServerBotGame(game: ServerEngineGame) {
+    if (this.serverGame?.gameId === game.gameId
+        && (game.version < this.serverGame.version
+          || (this.serverGame.result !== 'ONGOING' && game.result === 'ONGOING'))) return;
+    try {
+      this.state.loadExternalState(game.fen,
+        game.moves.map(move => ({ san: '', from: move.from, to: move.to,
+          promotion: move.promotion ?? undefined })),
+        game.sideToMove === 'WHITE' ? 'w' : 'b');
+    } catch (error) {
+      this.setBotError('recovery', error instanceof Error ? error.message : 'Invalid server game history');
+      this.botThinking = false;
+      return;
+    }
+    this.botError = '';
     if (this.serverTurnPoll !== null) window.clearTimeout(this.serverTurnPoll);
     this.serverTurnPoll = null;
     this.serverPollFailures = 0;
@@ -846,25 +880,13 @@ export class GamePageComponent {
     this.botGameActive = true;
     this.botResigned = false;
     this.showBotSetup = false;
-    this.botSidebarTab = 'analysis';
     try { sessionStorage.setItem('chessEngineGameId', game.gameId); } catch { /* Private browsing. */ }
     try { sessionStorage.setItem('chessEnginePlayerColor', this.playerColor); } catch { /* Private browsing. */ }
-    const replay = new Chess();
-    const moves: { san: string; from: string; to: string; promotion?: string }[] = [];
-    for (const move of game.moves) {
-      try {
-        const played = replay.move({ from: move.from, to: move.to,
-          promotion: (move.promotion ?? undefined) as 'q' | 'r' | 'b' | 'n' | undefined });
-        if (played) moves.push({ san: played.san, from: played.from, to: played.to,
-          promotion: played.promotion });
-      } catch { break; }
-    }
-    this.state.loadExternalState(game.fen, moves, game.sideToMove === 'WHITE' ? 'w' : 'b');
     if (game.result !== 'ONGOING') {
       this.state.status$.next(game.result === 'DRAW' ? 'Draw' : game.endReason === 'CHECKMATE'
         ? 'Checkmate' : 'Game over');
     } else if (game.turnState === 'ENGINE_FAILED') {
-      this.botError = game.engineError ?? 'Engine move failed. Retry the turn.';
+      this.setBotError('engine', game.engineError ?? 'Engine move failed. Retry the turn.');
     }
     if (game.turnState === 'ENGINE_THINKING') this.analysis.stop();
     else this.analysis.scheduleAnalyze(game.fen);
@@ -872,7 +894,7 @@ export class GamePageComponent {
     this.cdr.markForCheck();
   }
 
-  private pollServerEngineTurn(gameId: string, epoch: number) {
+  private pollServerEngineTurn(gameId: string, epoch: number, delayMs = 700) {
     this.serverTurnPoll = window.setTimeout(async () => {
       if (this.destroyed || epoch !== this.botEpoch || this.serverGame?.gameId !== gameId) return;
       try {
@@ -882,15 +904,13 @@ export class GamePageComponent {
       } catch (error) {
         if (this.destroyed || epoch !== this.botEpoch) return;
         this.serverPollFailures++;
-        if (this.serverPollFailures >= 5) {
-          this.botError = error instanceof Error ? error.message : 'Could not refresh engine turn';
-          this.botThinking = false;
-        } else {
-          this.serverTurnPoll = window.setTimeout(() => this.pollServerEngineTurn(gameId, epoch),
-            1000 * this.serverPollFailures);
-        }
+        if (this.serverPollFailures >= 3) this.setRequestError(error,
+          'Connection lost while waiting for the engine', 'recovery');
+        this.botThinking = true;
+        this.cdr.markForCheck();
+        this.pollServerEngineTurn(gameId, epoch, Math.min(5000, 1000 * this.serverPollFailures));
       }
-    }, 700);
+    }, delayMs);
   }
 
   async retryServerBotTurn() {
@@ -904,7 +924,7 @@ export class GamePageComponent {
     } catch (error) {
       if (epoch === this.botEpoch) {
         this.botThinking = false;
-        this.botError = error instanceof Error ? error.message : 'Retry failed';
+        this.setRequestError(error, 'Retry failed', 'recovery');
       }
     }
   }
@@ -923,10 +943,11 @@ export class GamePageComponent {
 
   async startBotGame() {
     if (!this.botMaximum && !this.validStrengthTarget()) {
-      this.botError = 'Strength target must be a whole number from 200 to 3190';
+      this.setBotError('configuration', 'Strength target must be a whole number from 200 to 3190');
       return;
     }
     this.invalidateBotSession();
+    this.botSidebarTab = 'analysis';
     if (this.multiplayer.connected$.value || this.onlineMode) {
       this.disconnectOnlineSession();
     }
@@ -950,7 +971,7 @@ export class GamePageComponent {
       } catch (error) {
         if (epoch === this.botEpoch) {
           this.botThinking = false;
-          this.botError = error instanceof Error ? error.message : 'Could not start game';
+          this.setRequestError(error, 'Could not start game');
         }
       }
       return;
@@ -973,6 +994,7 @@ export class GamePageComponent {
       return;
     }
     this.invalidateBotSession();
+    this.botSidebarTab = 'analysis';
     if (this.multiplayer.connected$.value || this.onlineMode) {
       this.disconnectOnlineSession();
     }
@@ -985,7 +1007,7 @@ export class GamePageComponent {
       } catch (error) {
         if (epoch === this.botEpoch) {
           this.botThinking = false;
-          this.botError = error instanceof Error ? error.message : 'Restart failed';
+          this.setRequestError(error, 'Restart failed');
         }
       }
       return;
@@ -1020,7 +1042,7 @@ export class GamePageComponent {
     if (this.botExecution === 'server' && previous?.result === 'ONGOING') {
       try { await this.engineApi.resign(previous.gameId); }
       catch (error) {
-        if (epoch === this.botEpoch) this.botError = error instanceof Error ? error.message : 'Could not resign';
+        if (epoch === this.botEpoch) this.setRequestError(error, 'Could not resign');
       }
     }
   }
@@ -1034,7 +1056,7 @@ export class GamePageComponent {
         const game = await this.engineApi.resign(this.serverGame.gameId);
         if (epoch === this.botEpoch) this.applyServerBotGame(game);
       } catch (error) {
-        if (epoch === this.botEpoch) this.botError = error instanceof Error ? error.message : 'Could not resign';
+        if (epoch === this.botEpoch) this.setRequestError(error, 'Could not resign');
       }
     } else {
       this.botResigned = true;
@@ -1487,10 +1509,22 @@ export class GamePageComponent {
   }
 
   isGameFinished(): boolean {
-    if (this.botMode && this.botExecution === 'server') {
-      return this.serverGame?.result !== 'ONGOING';
-    }
-    return this.botResigned || this.state.isGameOver();
+    return this.botMode ? this.botOutcome() !== null : this.state.isGameOver();
+  }
+
+  botOutcome(): GameOutcome | null {
+    if (!this.botMode || !this.botGameActive) return null;
+    if (this.botExecution === 'server') return this.serverGame ? serverOutcome(this.serverGame) : null;
+    return this.state.outcome(this.playerColor === 'w' ? 'WHITE' : 'BLACK', this.botResigned);
+  }
+
+  outcomeKey(outcome: GameOutcome): string {
+    return `${outcome.gameId}:${outcome.result}:${outcome.moveCount}`;
+  }
+
+  reviewBotGame(outcome: GameOutcome) {
+    this.dismissedOutcomeKey = this.outcomeKey(outcome);
+    this.botSidebarTab = 'moves';
   }
 
   canHumanMove(): boolean {
@@ -1499,15 +1533,19 @@ export class GamePageComponent {
       return this.botGameActive && !this.isBotThinking() && !this.isGameFinished()
         && this.state.sideToMove$.value === this.playerColor;
     }
-    return true;
+    if (this.multiplayer.gameState$.value?.gameId) {
+      return this.multiplayer.gameState$.value.result === 'ONGOING';
+    }
+    return !this.state.isGameOver();
   }
 
   setBotExecution(execution: 'browser' | 'server') {
     if (this.botExecution === execution) return;
     this.invalidateBotSession();
     this.botExecution = execution;
+    if (execution === 'server') void this.engineApi.validateSession().then(() => this.cdr.markForCheck());
     if (execution === 'browser') void this.botEngine.warm(this.botEngineFlavor).catch(error => {
-      if (!this.destroyed) this.botError = error.message;
+      if (!this.destroyed) this.setBotError('engine', error.message);
     });
   }
 
@@ -1516,7 +1554,7 @@ export class GamePageComponent {
     this.invalidateBotSession();
     this.botEngineFlavor = flavor;
     if (this.botExecution === 'browser') void this.botEngine.warm(flavor).catch(error => {
-      if (!this.destroyed) this.botError = error.message;
+      if (!this.destroyed) this.setBotError('engine', error.message);
     });
   }
 
@@ -1590,71 +1628,9 @@ export class GamePageComponent {
     }, 2000);
   }
 
-  showBotResultOverlay() {
-    if (!this.botMode || !this.botGameActive) {
-      return false;
-    }
-    return this.isBotGameOver();
-  }
-
   setOnlineView(view: 'public' | 'create' | 'join' | 'manage') {
     this.onlineView = view;
     this.multiplayer.clearLastError();
-  }
-
-  private botWinner(): 'player' | 'bot' | null {
-    if (!this.isCheckmateStatus()) {
-      return null;
-    }
-    const sideToMove = this.state.sideToMove$.value;
-    const winnerColor: 'w' | 'b' = sideToMove === 'w' ? 'b' : 'w';
-    return winnerColor === this.playerColor ? 'player' : 'bot';
-  }
-
-  botResultTitle() {
-    if (this.isDrawStatus()) {
-      return this.t('resultDraw');
-    }
-    const winner = this.botWinner();
-    if (winner === 'player') {
-      return this.t('youWonTitle');
-    }
-    if (winner === 'bot') {
-      return this.t('botWonTitle');
-    }
-    return '';
-  }
-
-  botResultClass(): 'win' | 'loss' | 'draw' | '' {
-    if (this.isDrawStatus()) {
-      return 'draw';
-    }
-    const winner = this.botWinner();
-    if (winner === 'player') {
-      return 'win';
-    }
-    if (winner === 'bot') {
-      return 'loss';
-    }
-    return '';
-  }
-
-  botResultSubtitle() {
-    return this.t('resultSubtitle');
-  }
-
-  private isCheckmateStatus() {
-    const status = String(this.state.status$.value ?? '').toLowerCase();
-    return status.includes('checkmate');
-  }
-
-  private isDrawStatus() {
-    const status = String(this.state.status$.value ?? '').toLowerCase();
-    return status.includes('draw') || status.includes('stalemate') || status.includes('insufficient');
-  }
-
-  private isBotGameOver() {
-    return this.isCheckmateStatus() || this.isDrawStatus();
   }
 
   private parseEvalValue(raw: string | null | undefined) {
@@ -1679,10 +1655,6 @@ export class GamePageComponent {
     return Math.max(-10, Math.min(10, numeric));
   }
 
-  botProfile() {
-    return EngineConfigMapper.forElo(this.botElo);
-  }
-
   botStrengthLabel() {
     return this.botMaximum ? 'MAXIMUM' : this.validStrengthTarget() ? strengthCategory(this.botElo) : 'Invalid target';
   }
@@ -1691,19 +1663,6 @@ export class GamePageComponent {
     return Number.isInteger(this.botElo) && this.botElo >= 200 && this.botElo <= 3190
       && (this.botExecution === 'browser' || this.serverMode !== 'TRAINING' || this.botElo >= 1320)
       && (this.botExecution === 'browser' || this.serverMode !== 'BEGINNER' || this.botElo <= 1319);
-  }
-
-  botMoveTimeLabel() {
-    const profile = this.botProfile();
-    if (profile.minTimeMs === profile.maxTimeMs) {
-      return `${profile.minTimeMs} ms`;
-    }
-    return `${profile.minTimeMs}-${profile.maxTimeMs} ms`;
-  }
-
-  botBlunderLabel() {
-    const profile = this.botProfile();
-    return `${Math.round(profile.blunderProb * 100)}%`;
   }
 
   engineStatusLabel() {

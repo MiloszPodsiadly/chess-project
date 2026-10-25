@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { strengthCategory, strengthSelection } from './strength-catalog';
-import { EngineConfigMapper } from './engine-config-mapper';
+import { BotEngineService } from './bot-engine.service';
 
 describe('strength catalog', () => {
   it('covers every boundary without a 2000 ceiling', () => {
@@ -19,9 +19,12 @@ describe('strength catalog', () => {
     expect(() => strengthCategory(3191)).toThrow();
   });
 
-  it('marks browser settings as unverified and scales above 2000', () => {
+  it('does not claim measured calibration and uses the real browser search budget', () => {
     expect(strengthSelection(2800, 'browser', false, 1000).calibrated).toBe(false);
-    expect(EngineConfigMapper.forElo(3190).depthCap).toBeGreaterThan(
-      EngineConfigMapper.forElo(2000).depthCap);
+    expect(strengthSelection(2800, 'server', false, 1000).calibrated).toBe(false);
+    expect(BotEngineService.effectiveSearch(1200, 'lite').movetime).toBe(120);
+    expect(BotEngineService.effectiveSearch(3190, 'full').movetime).toBe(300);
+    expect(BotEngineService.effectiveSearch(null, 'lite', 3000).movetime).toBe(3000);
+    expect(() => BotEngineService.effectiveSearch(null, 'lite', 60000)).toThrow();
   });
 });

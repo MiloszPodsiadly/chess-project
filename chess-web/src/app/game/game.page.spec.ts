@@ -15,10 +15,12 @@ function page() {
   component.serverGame = null;
   (component as any).state = {
     sideToMove$: { value: 'w' }, fen$: { value: 'start' },
-    isGameOver: () => false, reset: vi.fn()
+    status$: { next: vi.fn() },
+    isGameOver: () => false, outcome: () => null, reset: vi.fn(), loadExternalState: vi.fn()
   };
   (component as any).botEngine = { stop: vi.fn() };
   (component as any).analysis = { stop: vi.fn(), enabled$: { next: vi.fn() }, scheduleAnalyze: vi.fn() };
+  (component as any).cdr = { markForCheck: vi.fn() };
   (component as any).multiplayer = { connected$: { value: false }, gameState$: { value: null } };
   (component as any).engineApi = { authenticated: false };
   vi.spyOn(component, 'maybeBotMove').mockResolvedValue(undefined);
@@ -56,5 +58,35 @@ describe('bot board and color regression', () => {
     expect(component.botColor).toBe('w');
     expect(component.boardOrientation()).toBe('black');
     expect(component.maybeBotMove).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the selected sidebar tab during ordinary native snapshots', () => {
+    const component = page();
+    component.botExecution = 'server';
+    component.botSidebarTab = 'moves';
+    const game = { gameId: 'one', fen: 'start', sideToMove: 'WHITE', result: 'ONGOING',
+      endReason: 'NONE', moves: [], turnState: 'PLAYER_TURN', version: 1,
+      playerColor: 'WHITE' } as any;
+    (component as any).applyServerBotGame(game);
+    expect(component.botSidebarTab).toBe('moves');
+    component.botSidebarTab = 'settings';
+    (component as any).applyServerBotGame({ ...game, version: 2 });
+    expect(component.botSidebarTab).toBe('settings');
+  });
+
+  it('keeps one dismissed result for repeated completed native snapshots', () => {
+    const component = page();
+    component.botExecution = 'server';
+    const game = { gameId: 'done', fen: 'start', sideToMove: 'WHITE', result: 'BLACK_WIN',
+      endReason: 'RESIGNATION', moves: [], turnState: 'FINISHED', version: 5,
+      playerColor: 'WHITE' } as any;
+    (component as any).applyServerBotGame(game);
+    const outcome = component.botOutcome()!;
+    expect(component.botPhase()).toBe('FINISHED');
+    expect(outcome.perspective).toBe('LOSS');
+    component.reviewBotGame(outcome);
+    expect(component.botSidebarTab).toBe('moves');
+    (component as any).applyServerBotGame({ ...game, version: 6 });
+    expect(component.dismissedOutcomeKey).toBe(component.outcomeKey(component.botOutcome()!));
   });
 });

@@ -31,5 +31,5 @@ export function strengthSelection(target: number, execution: 'browser' | 'server
   const category = strengthCategory(target);
   return { category, mode: target >= 1320 ? 'TRAINING' : 'BEGINNER', target,
     supportedMin: 200, supportedMax: 3190, execution, budgetMs,
-    calibrated: execution === 'server' && target >= 1320 };
+    calibrated: false };
 }

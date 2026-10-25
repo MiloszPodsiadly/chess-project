@@ -1,0 +1,55 @@
+<section class="setup" [attr.lang]="lang">
+  <header><div class="mark">♞</div><div><h2>Stockfish 19</h2><p>{{ lang === 'pl' ? 'Ustaw partię z botem' : 'Set up your bot game' }}</p></div></header>
+  <fieldset><legend>{{ lang === 'pl' ? 'Silnik' : 'Engine' }}</legend>
+    <div class="segments">
+      <button type="button" [class.active]="execution === 'browser'" [attr.aria-pressed]="execution === 'browser'" (click)="executionChange.emit('browser')">{{ lang === 'pl' ? 'Przeglądarka · szybko' : 'Browser · Fast' }}</button>
+      <button type="button" [class.active]="execution === 'server'" [attr.aria-pressed]="execution === 'server'" (click)="executionChange.emit('server')">{{ lang === 'pl' ? 'Serwer · Native' : 'Server · Native' }}</button>
+    </div>
+    <label *ngIf="execution === 'browser'">{{ lang === 'pl' ? 'Wariant' : 'Build' }}
+      <select [ngModel]="flavor" (ngModelChange)="flavorChange.emit($event)"><option value="lite">Lite · {{ lang === 'pl' ? 'szybki start' : 'fast start' }}</option><option value="full">Full · {{ lang === 'pl' ? 'większe pobieranie' : 'larger download' }}</option></select>
+    </label>
+    <div class="account" *ngIf="execution === 'server'">
+      <span>{{ api.authenticated ? (lang === 'pl' ? 'Zalogowano' : 'Signed in') : (lang === 'pl' ? 'Wymagane konto' : 'Account required') }}</span>
+      <button type="button" *ngIf="!api.authenticated" (click)="openAuth($event)">{{ lang === 'pl' ? 'Zaloguj się' : 'Sign in' }}</button>
+    </div>
+  </fieldset>
+  <fieldset><legend>{{ lang === 'pl' ? 'Poziom' : 'Difficulty' }}</legend>
+    <div class="levels">
+      <button type="button" *ngFor="let choice of choices" [class.active]="!maximum && elo >= choice.min && elo <= choice.max" [attr.aria-pressed]="!maximum && elo >= choice.min && elo <= choice.max" (click)="strengthChange.emit(choice.target)"><strong>{{ choice[lang] }}</strong><small>{{ choice.min }}–{{ choice.max }}</small></button>
+      <button type="button" [class.active]="maximum" [attr.aria-pressed]="maximum" (click)="strengthChange.emit(null)"><strong>Maximum</strong><small>{{ lang === 'pl' ? 'bez limitu' : 'unrestricted' }}</small></button>
+    </div>
+    <details><summary>{{ lang === 'pl' ? 'Własny poziom / zaawansowane' : 'Custom / Advanced' }}</summary>
+      <div class="advanced">
+        <label *ngIf="!maximum">{{ lang === 'pl' ? 'Własny poziom' : 'Custom level' }}
+          <input type="range" min="200" max="3190" step="1" [ngModel]="elo" (ngModelChange)="customValue($event)" />
+          <input type="number" min="200" max="3190" step="1" [ngModel]="elo" (ngModelChange)="customValue($event)" />
+        </label>
+        <label *ngIf="maximum && execution === 'browser'">{{ lang === 'pl' ? 'Czas szukania' : 'Search budget' }}
+          <select [ngModel]="browserMaximumMs" (ngModelChange)="browserMaximumMsChange.emit($event)"><option [ngValue]="300">300 ms</option><option [ngValue]="1000">1 s</option><option [ngValue]="3000">3 s</option></select>
+        </label>
+        <label *ngIf="maximum && execution === 'server'">{{ lang === 'pl' ? 'Czas szukania' : 'Search budget' }}
+          <select [ngModel]="serverPreset" (ngModelChange)="serverPresetChange.emit($event)"><option value="STRONG">3 s</option><option value="EXPERT">10 s</option><option value="ULTIMATE">30 s</option><option value="DEEP_CHALLENGE">60 s</option></select>
+        </label>
+      </div>
+    </details>
+    <p class="error" *ngIf="!valid">{{ lang === 'pl' ? 'Podaj liczbę całkowitą od 200 do 3190.' : 'Enter an integer from 200 to 3190.' }}</p>
+  </fieldset>
+  <fieldset><legend>{{ lang === 'pl' ? 'Grasz kolorem' : 'Play as' }}</legend><div class="segments">
+    <button type="button" [class.active]="side === 'w'" [attr.aria-pressed]="side === 'w'" (click)="sideChange.emit('w')">{{ lang === 'pl' ? 'Białe' : 'White' }}</button>
+    <button type="button" [class.active]="side === 'b'" [attr.aria-pressed]="side === 'b'" (click)="sideChange.emit('b')">{{ lang === 'pl' ? 'Czarne' : 'Black' }}</button>
+    <button type="button" [class.active]="side === 'random'" [attr.aria-pressed]="side === 'random'" (click)="sideChange.emit('random')">{{ lang === 'pl' ? 'Losowo' : 'Random' }}</button>
+  </div></fieldset>
+  <button type="button" class="start" [disabled]="thinking || !valid || execution === 'server' && !api.authenticated" (click)="start.emit()">{{ lang === 'pl' ? 'Rozpocznij partię' : 'Start Game' }}</button>
+  <p class="error" *ngIf="error" role="alert">{{ error }}</p>
+</section>
+<div class="dialog-backdrop" *ngIf="authOpen" (keydown)="onAuthKeydown($event)">
+  <div class="dialog" #authDialog role="dialog" aria-modal="true" [attr.aria-label]="lang === 'pl' ? 'Konto' : 'Account'">
+    <button type="button" class="close" (click)="closeAuth()" [attr.aria-label]="lang === 'pl' ? 'Zamknij' : 'Close'">×</button>
+    <div class="segments"><button type="button" [class.active]="authMode === 'login'" (click)="authMode = 'login'">{{ lang === 'pl' ? 'Logowanie' : 'Sign in' }}</button><button type="button" [class.active]="authMode === 'register'" (click)="authMode = 'register'">{{ lang === 'pl' ? 'Rejestracja' : 'Register' }}</button></div>
+    <label>{{ lang === 'pl' ? 'Nazwa użytkownika' : 'Username' }}<input type="text" [(ngModel)]="username" autocomplete="username" /></label>
+    <label *ngIf="authMode === 'register'">Email<input type="email" [(ngModel)]="email" autocomplete="email" /></label>
+    <label>{{ lang === 'pl' ? 'Hasło' : 'Password' }}<input type="password" [(ngModel)]="password" [attr.autocomplete]="authMode === 'register' ? 'new-password' : 'current-password'" /></label>
+    <p class="error" *ngIf="authError" role="alert">{{ authError }}</p>
+    <button type="button" class="start" (click)="authenticate()">{{ authMode === 'login' ? (lang === 'pl' ? 'Zaloguj się' : 'Sign in') : (lang === 'pl' ? 'Zarejestruj się' : 'Register') }}</button>
+  </div>
+</div>

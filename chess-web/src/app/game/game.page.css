@@ -186,6 +186,14 @@
   filter: blur(1.6px) brightness(0.7);
 }
 
+.position-alert {
+  min-height: 1.4rem;
+  margin-top: 0.5rem;
+  color: #f1b58d;
+  font-weight: 700;
+  text-align: center;
+}
+
 .board-lock {
   position: absolute;
   inset: 0;
@@ -222,15 +230,34 @@
   min-width: 0;
 }
 
-.bot-controls {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid rgba(35, 60, 70, 0.35);
-  padding-bottom: 12px;
-  background: rgba(8, 18, 24, 0.65);
-  border-radius: 14px;
-  padding: 14px;
+.game-shell.bot-mode .game-grid {
+  min-height: 0;
+  grid-template-columns: minmax(0, 1.2fr) minmax(370px, 0.8fr);
+}
+
+.game-shell.bot-mode .left-panel { min-height: 0; height: auto; }
+.game-shell.bot-mode .board-card { height: auto; }
+.game-shell.bot-mode .board-shell { align-items: center; }
+.setup-phase .settings-card { padding: 10px; }
+
+.game-shell.bot-mode .bot-sidebar-tabs button,
+.game-shell.bot-mode .bot-actions .ghost {
+  min-height: 39px;
+  border-radius: 9px;
+  border: 1px solid #375665;
+  background: #112731;
+  color: #ecf4f6;
+}
+
+.game-shell.bot-mode .bot-sidebar-tabs button.active {
+  border-color: #6bcca4;
+  background: #1b5548;
+}
+
+.game-shell.bot-mode .bot-actions button:focus-visible,
+.game-shell.bot-mode .bot-sidebar-tabs button:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
 }
 
 .online-controls {
@@ -696,30 +723,6 @@
   color: #9ca8bb;
 }
 
-.bot-controls label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  color: #9ca8bb;
-}
-
-.bot-controls input[type='range'],
-.bot-controls select {
-  border-radius: 10px;
-  border: 1px solid #2c3442;
-  background: #0c0f14;
-  color: #f5f7fb;
-  padding: 8px 10px;
-  font-size: 13px;
-}
-
-.bot-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-
 .segmented {
   display: flex;
   gap: 6px;
@@ -747,29 +750,6 @@
   border-color: rgba(90, 200, 220, 0.8);
 }
 
-.slider {
-  display: grid;
-  gap: 8px;
-}
-
-.slider input[type='range'] {
-  width: 100%;
-}
-
-.slider-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: #c9d6e6;
-}
-
-.slider-meta .chip {
-  background: rgba(18, 28, 40, 0.8);
-  border-color: rgba(80, 160, 200, 0.7);
-  color: #cfe5ff;
-}
-
 .toggle {
   display: flex;
   justify-content: space-between;
@@ -784,58 +764,6 @@
 .toggle input[type='checkbox'] {
   width: 18px;
   height: 18px;
-}
-
-.bot-profile {
-  border-radius: 12px;
-  padding: 12px;
-  border: 1px solid rgba(40, 60, 80, 0.6);
-  background: rgba(10, 16, 22, 0.65);
-}
-
-.profile-title {
-  font-size: 12px;
-  color: #9ca8bb;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-
-.profile-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 10px;
-}
-
-.profile-card {
-  display: grid;
-  gap: 6px;
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(40, 60, 80, 0.6);
-  background: rgba(8, 14, 20, 0.7);
-}
-
-.profile-card .label {
-  font-size: 11px;
-  color: #8b99ae;
-  text-transform: uppercase;
-}
-
-.profile-card .value {
-  font-size: 14px;
-  font-weight: 700;
-  color: #e6ebf2;
-}
-
-.bot-status {
-  color: #7fd0ff;
-  font-size: 12px;
-  align-self: center;
-}
-
-.bot-status.ready {
-  color: #8ff0b6;
 }
 
 .bot-actions-card {
@@ -868,30 +796,6 @@
   font-weight: 700;
   border: none;
   cursor: pointer;
-}
-
-.setup-actions {
-  grid-column: 1 / -1;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.setup-actions .primary {
-  background: #1f9f76;
-  color: #0b1217;
-  padding: 9px 16px;
-  border-radius: 12px;
-  text-decoration: none;
-  font-weight: 700;
-  border: none;
-  cursor: pointer;
-}
-
-.hidden {
-  filter: blur(6px);
-  opacity: 0.4;
-  pointer-events: none;
 }
 
 .moves {
@@ -967,11 +871,6 @@
   color: #e9eef7;
 }
 
-.result-modal.bot-result h3 {
-  color: #ffffff;
-  text-shadow: none;
-}
-
 .result-modal.result-win {
   border-color: rgba(90, 210, 150, 0.7);
   box-shadow: 0 18px 40px rgba(18, 80, 60, 0.45);
@@ -1042,16 +941,13 @@
     grid-template-columns: 1fr;
   }
 
+  .game-shell.bot-mode .game-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .right-panel {
     grid-template-columns: 1fr;
   }
-}
-
-.field-title {
-  color: #e6ebf2;
-  font-weight: 700;
-  font-size: 13px;
-  margin-bottom: 8px;
 }
 
 .field-help {
@@ -1061,62 +957,6 @@
   margin: 4px 0 10px;
 }
 
-.strength-catalog,
-.bot-login {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-
-.strength-options {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
-}
-
-.strength-options button {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-  text-align: left;
-  border: 1px solid #344958;
-  background: #101d27;
-  color: #e6ebf2;
-  border-radius: 10px;
-  padding: 9px;
-  cursor: pointer;
-}
-
-.strength-options button.active {
-  border-color: #62d4c5;
-  background: #173b41;
-}
-
-.strength-options small { color: #9eacbd; }
-
-.custom-strength,
-.thinking-time {
-  display: grid !important;
-  gap: 8px;
-  min-width: 0;
-}
-
-.custom-strength input[type='range'] { width: 100%; }
-
-.custom-strength input[type='number'],
-.bot-login input,
-.thinking-time select {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  padding: 9px 11px;
-  color: #f5f7fb;
-  background: #0c141b;
-  border: 1px solid #405366;
-  border-radius: 10px;
-}
-
-.maximum-summary { color: #a7f2ce; font-weight: 700; }
 .bot-sidebar-tabs { min-width: 0; }
 .bot-sidebar-tabs button { min-width: 0; }
 .bot-settings-card { display: grid; gap: 14px; }
@@ -1127,10 +967,6 @@ input:focus-visible,
 select:focus-visible {
   outline: 3px solid #ffd166;
   outline-offset: 2px;
-}
-
-@media (max-width: 1200px) {
-  .strength-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 960px) {
@@ -1144,7 +980,6 @@ select:focus-visible {
   .game-shell { padding: 8px; }
   .board-card { padding: 6px; }
   .settings-card { padding: 12px; }
-  .strength-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .card-header { align-items: flex-start; flex-direction: column; }
   .segmented button { padding: 8px 5px; }
 }
