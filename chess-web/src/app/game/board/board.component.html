@@ -7,6 +7,9 @@
         [class.selected]="squareGrid[r][f] === selected"
         [class.legal]="legalMovesSet.has(squareGrid[r][f])"
         [class.last-move]="lastMove && (squareGrid[r][f] === lastMove.from || squareGrid[r][f] === lastMove.to)"
+        [class.checked-king]="squareGrid[r][f] === checkedKingSquare"
+        [class.checkmate]="checkmate && squareGrid[r][f] === checkedKingSquare"
+        [attr.aria-label]="squareLabel(squareGrid[r][f])"
         (click)="squareClick.emit(squareGrid[r][f])"
       >
         <img
