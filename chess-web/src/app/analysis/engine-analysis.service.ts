@@ -82,6 +82,7 @@ export class EngineAnalysisService {
     if (this.external$.value) {
       return;
     }
+    if (this.lastFen !== fen) this.stop();
     if (this.pendingTimer) {
       window.clearTimeout(this.pendingTimer);
     }
@@ -99,6 +100,10 @@ export class EngineAnalysisService {
     this.requestId++;
     this.engine.stop();
     this.status$.next('idle');
+    this.evaluation$.next('—');
+    this.bestMove$.next(null);
+    this.bestMoveSan$.next(null);
+    this.lines$.next([]);
   }
 
   toggleHints() {

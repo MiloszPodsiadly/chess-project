@@ -4,6 +4,9 @@ import { BrowserUciEngine } from './browser-uci-engine';
 class FakeWorker {
   static instances: FakeWorker[] = [];
   static autoSearch = true;
+  static autoReady = true;
+  static autoHandshake = true;
+  static autoStop = true;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   onerror: (() => void) | null = null;
   commands: string[] = [];
@@ -12,14 +15,14 @@ class FakeWorker {
   constructor(public url: string) { FakeWorker.instances.push(this); }
   postMessage(command: string) {
     this.commands.push(command);
-    if (command === 'uci') queueMicrotask(() => {
+    if (command === 'uci' && FakeWorker.autoHandshake) queueMicrotask(() => {
       this.emit('option name UCI_LimitStrength type check default false');
       this.emit('option name UCI_Elo type spin default 1320 min 1320 max 3190');
       this.emit('uciok');
     });
-    if (command === 'isready') queueMicrotask(() => this.emit('readyok'));
+    if (command === 'isready' && FakeWorker.autoReady) queueMicrotask(() => this.emit('readyok'));
     if (command.startsWith('go ') && FakeWorker.autoSearch) queueMicrotask(() => this.emit('bestmove e2e4'));
-    if (command === 'stop') queueMicrotask(() => this.emit('bestmove e2e4'));
+    if (command === 'stop' && FakeWorker.autoStop) queueMicrotask(() => this.emit('bestmove e2e4'));
   }
   terminate() { this.terminated = true; }
   emit(line: string) { this.onmessage?.({ data: line } as MessageEvent<string>); }
@@ -32,6 +35,9 @@ describe('BrowserUciEngine', () => {
   beforeEach(() => {
     FakeWorker.instances = [];
     FakeWorker.autoSearch = true;
+    FakeWorker.autoReady = true;
+    FakeWorker.autoHandshake = true;
+    FakeWorker.autoStop = true;
     vi.stubGlobal('Worker', FakeWorker);
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -50,6 +56,17 @@ describe('BrowserUciEngine', () => {
     expect(worker.commands).toContain('setoption name UCI_Elo value 2800');
     engine.dispose();
     expect(worker.terminated).toBe(true);
+  });
+
+  it('uses exact supported targets and rejects a hidden budget clamp', async () => {
+    const engine = new BrowserUciEngine();
+    await engine.warm();
+    for (const target of [1320, 1800, 2400, 2800, 3000, 3190]) {
+      await engine.search(fen, { ...options, target, movetime: 200 });
+      expect(FakeWorker.instances[0].commands).toContain(`setoption name UCI_Elo value ${target}`);
+    }
+    expect(FakeWorker.instances[0].commands).toContain('go depth 30 movetime 200');
+    await expect(engine.search(fen, { ...options, movetime: 30000 })).rejects.toThrow('budget');
   });
 
   it('cancels a search and ignores its stale result before the next search', async () => {
@@ -76,5 +93,30 @@ describe('BrowserUciEngine', () => {
     expect(FakeWorker.instances[1].url).toContain('stockfish-19-single.js');
     expect(lite.terminated).toBe(true);
     await expect(engine.search(fen, { ...options, flavor: 'full' })).resolves.toBe('e2e4');
+  });
+
+  it('settles a cancelled loading search and ignores its old handshake', async () => {
+    const engine = new BrowserUciEngine();
+    FakeWorker.autoHandshake = false;
+    const search = engine.search(fen, options);
+    const old = FakeWorker.instances[0];
+    engine.stop();
+    await expect(search).rejects.toThrow('cancelled');
+    expect(old.terminated).toBe(true);
+    FakeWorker.autoHandshake = true;
+    await expect(engine.search(fen, options)).resolves.toBe('e2e4');
+    old.emit('readyok');
+    expect(FakeWorker.instances).toHaveLength(2);
+  });
+
+  it('rejects a cancelled isready request instead of reporting success', async () => {
+    const engine = new BrowserUciEngine();
+    await engine.warm();
+    FakeWorker.autoReady = false;
+    const search = engine.search(fen, options);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    engine.stop();
+    await expect(search).rejects.toThrow('cancelled');
+    expect(FakeWorker.instances[0].terminated).toBe(true);
   });
 });

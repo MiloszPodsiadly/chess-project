@@ -22,7 +22,8 @@ export class BrowserUciEngine {
   private resolveLoading: (() => void) | null = null;
   private rejectLoading: ((error: Error) => void) | null = null;
   private loadingTimer: number | null = null;
-  private resolveReady: (() => void) | null = null;
+  private pendingReady: { resolve: () => void; reject: (error: Error) => void } | null = null;
+  private readyTimer: number | null = null;
   private pending: { resolve: (move: string) => void; reject: (error: Error) => void;
     onInfo?: (line: string) => void } | null = null;
   private stopping: Promise<void> | null = null;
@@ -34,6 +35,7 @@ export class BrowserUciEngine {
   supportsNativeElo(): boolean { return this.options.has('UCI_Elo') && this.options.has('UCI_LimitStrength'); }
 
   warm(flavor: BrowserEngineFlavor = 'lite'): Promise<void> {
+    if (this.state === 'DISPOSED') return Promise.reject(new Error('Stockfish.js is disposed'));
     if (this.worker && this.flavor === flavor) return this.loading ?? Promise.resolve();
     if (this.worker) this.terminate(new Error('Engine flavor changed'));
     this.state = 'LOADING';
@@ -63,6 +65,9 @@ export class BrowserUciEngine {
   }
 
   async search(fen: string, options: SearchOptions, onInfo?: (line: string) => void): Promise<string> {
+    if (!Number.isInteger(options.movetime) || options.movetime < 1 || options.movetime > 10000) {
+      throw new RangeError('Browser search budget must be 1–10000 ms');
+    }
     const flavor = options.flavor ?? 'lite';
     if (this.worker && this.flavor !== flavor) this.terminate(new Error('Engine flavor changed'));
     if (this.state === 'SEARCHING') this.stop();
@@ -77,14 +82,15 @@ export class BrowserUciEngine {
         'setoption name Skill Level value 20'];
     for (const command of commands) this.worker.postMessage(command);
     this.worker.postMessage(`setoption name MultiPV value ${Math.max(1, Math.min(5, options.multiPv))}`);
-    await new Promise<void>((resolve) => {
-      this.resolveReady = resolve;
+    await new Promise<void>((resolve, reject) => {
+      this.pendingReady = { resolve, reject };
+      this.readyTimer = window.setTimeout(() => this.fail(new Error('Stockfish.js readiness timed out')), 5000);
       this.worker!.postMessage('isready');
     });
     if (requestId !== this.requestId || !this.worker) throw new Error('Stockfish.js search cancelled');
     this.worker.postMessage(`position fen ${fen}`);
     const depth = Math.max(1, Math.min(40, options.depth));
-    const movetime = Math.max(1, Math.min(10000, options.movetime));
+    const movetime = options.movetime;
     this.state = 'SEARCHING';
     return new Promise<string>((resolve, reject) => {
       this.pending = { resolve, reject, onInfo };
@@ -96,6 +102,10 @@ export class BrowserUciEngine {
 
   stop(): void {
     this.requestId++;
+    if (this.state === 'LOADING' || this.pendingReady) {
+      this.terminate(new Error('Stockfish.js search cancelled'));
+      return;
+    }
     if (this.state !== 'SEARCHING' || !this.worker) return;
     this.clearSearchTimer();
     this.pending?.reject(new Error('Stockfish.js search cancelled'));
@@ -115,7 +125,8 @@ export class BrowserUciEngine {
   }
 
   private strengthCommands(target: number): string[] {
-    if (target >= 1320 && this.supportsNativeElo()) {
+    if (target >= 1320) {
+      if (!this.supportsNativeElo()) throw new Error('This browser engine does not support UCI_Elo');
       return ['setoption name Skill Level value 20',
         `setoption name UCI_Elo value ${target}`,
         'setoption name UCI_LimitStrength value true'];
@@ -140,8 +151,10 @@ export class BrowserUciEngine {
         this.rejectLoading = null;
         this.loading = null;
       } else {
-        this.resolveReady?.();
-        this.resolveReady = null;
+        if (this.readyTimer !== null) window.clearTimeout(this.readyTimer);
+        this.readyTimer = null;
+        this.pendingReady?.resolve();
+        this.pendingReady = null;
       }
     } else if (line.startsWith('info ') && this.state === 'SEARCHING') {
       this.pending?.onInfo?.(line);
@@ -177,13 +190,15 @@ export class BrowserUciEngine {
     if (this.stopTimer !== null) window.clearTimeout(this.stopTimer);
     this.stopTimer = null;
     this.clearSearchTimer();
+    if (this.readyTimer !== null) window.clearTimeout(this.readyTimer);
+    this.readyTimer = null;
     this.rejectLoading?.(error);
     this.pending?.reject(error);
-    this.resolveReady?.();
+    this.pendingReady?.reject(error);
     this.resolveStopping?.();
     this.resolveLoading = null;
     this.rejectLoading = null;
-    this.resolveReady = null;
+    this.pendingReady = null;
     this.resolveStopping = null;
     this.loading = null;
     this.pending = null;

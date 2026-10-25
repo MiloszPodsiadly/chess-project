@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 
 export type ServerEngineMode = 'BEGINNER' | 'TRAINING' | 'FULL_STRENGTH';
 export type StrengthPreset = 'STRONG' | 'EXPERT' | 'ULTIMATE' | 'DEEP_CHALLENGE';
+export class EngineSessionExpiredError extends Error {}
 
 export interface ServerEngineGame {
   gameId: string;
@@ -22,8 +23,9 @@ export interface ServerEngineGame {
 
 @Injectable({ providedIn: 'root' })
 export class EngineGameApiService {
+  private sessionVerified = false;
   get authenticated(): boolean {
-    return !!this.token;
+    return this.sessionVerified && !!this.token;
   }
 
   private get token(): string | null {
@@ -43,6 +45,32 @@ export class EngineGameApiService {
     const data = await response.json() as { accessToken: string };
     if (!data.accessToken) throw new Error('Server returned no access token');
     sessionStorage.setItem('chessEngineToken', data.accessToken);
+    this.sessionVerified = true;
+  }
+
+  async validateSession(): Promise<boolean> {
+    const token = this.token;
+    if (!token) { this.sessionVerified = false; return false; }
+    try {
+      const response = await fetch('/api/auth/api-session', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (token !== this.token) return this.authenticated;
+      if (response.status === 401 || response.status === 403) {
+        this.clearSession();
+        return false;
+      }
+      this.sessionVerified = response.ok;
+      return this.sessionVerified;
+    } catch {
+      this.sessionVerified = false;
+      return false;
+    }
+  }
+
+  private clearSession(): void {
+    this.sessionVerified = false;
+    try { sessionStorage.removeItem('chessEngineToken'); } catch { /* Private browsing. */ }
   }
 
   async create(playerColor: 'w' | 'b', elo: number, mode: ServerEngineMode,
@@ -83,6 +111,10 @@ export class EngineGameApiService {
       body: body ? JSON.stringify(body) : undefined
     });
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        this.clearSession();
+        throw new EngineSessionExpiredError('Your server session expired. Sign in again.');
+      }
       let message = `Engine request failed (${response.status})`;
       try {
         const error = await response.json() as { message?: string; error?: string };
