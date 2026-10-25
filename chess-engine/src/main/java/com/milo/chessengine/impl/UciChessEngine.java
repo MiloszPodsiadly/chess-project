@@ -334,21 +334,28 @@ public class UciChessEngine implements ChessEngine, AutoCloseable {
     }
 
     private void configureStrength(EngineStrength strength) {
+        for (String command : strengthCommands(strength, uciOptions)) {
+            process.send(command);
+        }
+    }
+
+    static List<String> strengthCommands(EngineStrength strength, Map<String, String> options) {
         if (strength.mode() == EngineStrength.Mode.TRAINING) {
-            String eloOption = uciOptions.get("UCI_Elo");
+            String eloOption = options.get("UCI_Elo");
+            if (eloOption == null) throw new IllegalStateException("Stockfish has no UCI_Elo option");
             java.util.regex.Matcher range = java.util.regex.Pattern.compile("min (\\d+) max (\\d+)").matcher(eloOption);
             if (!range.find() || strength.elo() < Integer.parseInt(range.group(1))
                     || strength.elo() > Integer.parseInt(range.group(2))) {
                 throw new IllegalArgumentException("Requested Elo is unsupported by this Stockfish binary");
             }
-            process.send("setoption name Skill Level value 20");
-            process.send("setoption name UCI_Elo value " + strength.elo());
-            process.send("setoption name UCI_LimitStrength value true");
+            return List.of("setoption name Skill Level value 20",
+                    "setoption name UCI_Elo value " + strength.elo(),
+                    "setoption name UCI_LimitStrength value true");
         } else {
-            process.send("setoption name UCI_LimitStrength value false");
             int skill = strength.mode() == EngineStrength.Mode.BEGINNER
                     ? Math.max(0, Math.min(10, (strength.elo() - 200) / 100)) : 20;
-            process.send("setoption name Skill Level value " + skill);
+            return List.of("setoption name UCI_LimitStrength value false",
+                    "setoption name Skill Level value " + skill);
         }
     }
 
@@ -598,13 +605,13 @@ public class UciChessEngine implements ChessEngine, AutoCloseable {
         SearchResult toResult() {
             Map.Entry<Integer, Map<Integer, SearchCandidate>> snapshot = null;
             for (Map.Entry<Integer, Map<Integer, SearchCandidate>> entry : snapshots.entrySet()) {
-                if (entry.getValue().containsKey(1) && entry.getValue().size() >= expectedMultiPv) {
+                if (matchesBestMove(entry.getValue()) && entry.getValue().size() >= expectedMultiPv) {
                     snapshot = entry;
                 }
             }
             if (snapshot == null) {
                 for (Map.Entry<Integer, Map<Integer, SearchCandidate>> entry : snapshots.entrySet()) {
-                    if (entry.getValue().containsKey(1)) snapshot = entry;
+                    if (matchesBestMove(entry.getValue())) snapshot = entry;
                 }
             }
             Map<Integer, SearchCandidate> selected = snapshot == null ? Map.of() : snapshot.getValue();
@@ -624,6 +631,11 @@ public class UciChessEngine implements ChessEngine, AutoCloseable {
                     nodes,
                     candidates
             );
+        }
+
+        private boolean matchesBestMove(Map<Integer, SearchCandidate> candidates) {
+            SearchCandidate first = candidates.get(1);
+            return first != null && !first.pv().isEmpty() && first.pv().get(0).equals(bestMove);
         }
     }
 

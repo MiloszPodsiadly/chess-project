@@ -68,6 +68,15 @@ public class GameEntity {
     @Column(name = "engine_error", length = 256)
     private String engineError;
 
+    @Column(name = "engine_execution_id")
+    private UUID engineExecutionId;
+
+    @Column(name = "engine_lease_until")
+    private Instant engineLeaseUntil;
+
+    @Column(name = "engine_attempts", nullable = false, columnDefinition = "integer default 0")
+    private int engineAttempts;
+
     @Version
     private Long version;
 
@@ -182,6 +191,12 @@ public class GameEntity {
     public void setEngineTurnState(GameTurnState engineTurnState) { this.engineTurnState = engineTurnState; }
     public String getEngineError() { return engineError; }
     public void setEngineError(String engineError) { this.engineError = engineError; }
+    public UUID getEngineExecutionId() { return engineExecutionId; }
+    public void setEngineExecutionId(UUID engineExecutionId) { this.engineExecutionId = engineExecutionId; }
+    public Instant getEngineLeaseUntil() { return engineLeaseUntil; }
+    public void setEngineLeaseUntil(Instant engineLeaseUntil) { this.engineLeaseUntil = engineLeaseUntil; }
+    public int getEngineAttempts() { return engineAttempts; }
+    public void setEngineAttempts(int engineAttempts) { this.engineAttempts = engineAttempts; }
     public Long getVersion() { return version; }
 
     public long getWhiteTimeLeftMs() {

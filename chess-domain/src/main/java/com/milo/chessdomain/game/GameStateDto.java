@@ -22,12 +22,14 @@ public record GameStateDto(
         String engineError,
         String engineMode,
         String enginePreset,
-        Integer engineElo
+        Integer engineElo,
+        Color playerColor,
+        UUID engineExecutionId
 ) {
     public GameStateDto(UUID gameId, String fen, Color sideToMove, GameResult result,
                         GameEndReason endReason, List<MoveDto> moves, EvaluationDto evaluation,
                         EngineMoveResponseDto analysis, Instant createdAt, Instant lastMoveAt) {
         this(gameId, fen, sideToMove, result, endReason, moves, evaluation, analysis,
-                createdAt, lastMoveAt, null, null, null, null, null, null);
+                createdAt, lastMoveAt, null, null, null, null, null, null, null, null);
     }
 }

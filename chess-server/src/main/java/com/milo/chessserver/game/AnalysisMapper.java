@@ -5,7 +5,6 @@ import com.github.bhlangonijr.chesslib.Square;
 import com.github.bhlangonijr.chesslib.move.Move;
 import com.github.bhlangonijr.chesslib.move.MoveConversionException;
 import com.github.bhlangonijr.chesslib.move.MoveList;
-import com.milo.chessdomain.EvalType;
 import com.milo.chessdomain.game.AnalysisLineDto;
 import com.milo.chessdomain.game.EngineMoveResponseDto;
 import com.milo.chessdomain.game.EvaluationDto;
@@ -15,7 +14,6 @@ import com.milo.chessengine.core.EngineResult;
 import com.milo.chessengine.core.EvalScore;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 public final class AnalysisMapper {
@@ -71,7 +69,6 @@ public final class AnalysisMapper {
         int limit = Math.max(1, maxLines);
         List<AnalysisLineDto> lines = new ArrayList<>();
         candidates.stream()
-                .sorted(Comparator.comparingInt(AnalysisMapper::scoreForOrdering).reversed())
                 .limit(limit)
                 .forEach(c -> {
                     List<String> pvSan = toSanList(fen, c.principalVariation());
@@ -85,20 +82,6 @@ public final class AnalysisMapper {
                     ));
                 });
         return lines;
-    }
-
-    private static int scoreForOrdering(CandidateMove candidate) {
-        if (candidate.score() == null) {
-            return Integer.MIN_VALUE;
-        }
-        if (candidate.score().type() == EvalType.MATE) {
-            int ply = candidate.score().value();
-            if (ply > 0) {
-                return 100000 - ply;
-            }
-            return -100000 - ply;
-        }
-        return candidate.score().value();
     }
 
     private static List<String> toSanList(String fen, List<MoveDto> moves) {

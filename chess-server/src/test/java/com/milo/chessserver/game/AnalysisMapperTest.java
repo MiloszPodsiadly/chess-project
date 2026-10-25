@@ -9,22 +9,24 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class AnalysisMapperTest {
     @Test
-    void ranksBlackCandidatesBySideToMoveAndConvertsSanFromSearchPosition() {
-        String fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
-        MoveDto e5 = new MoveDto("e7", "e5", null, Color.BLACK);
-        MoveDto d5 = new MoveDto("d7", "d5", null, Color.BLACK);
-        EngineResult result = new EngineResult(e5, List.of(e5), EvalScore.cp(100, Color.BLACK),
-                12, 1000, 10, List.of(
-                new CandidateMove(d5, EvalScore.cp(50, Color.BLACK), List.of(d5)),
-                new CandidateMove(e5, EvalScore.cp(100, Color.BLACK), List.of(e5))));
+    void keepsUciMultiPvOrderWhenBlackIsToMove() {
+        MoveDto first = new MoveDto("e7", "e5", null, Color.BLACK);
+        MoveDto second = new MoveDto("d7", "d5", null, Color.BLACK);
+        EngineResult result = new EngineResult(first, List.of(first), EvalScore.cp(80, Color.BLACK),
+                12, 1000, 100, List.of(
+                new CandidateMove(first, EvalScore.cp(80, Color.BLACK), List.of(first)),
+                new CandidateMove(second, EvalScore.cp(-10, Color.BLACK), List.of(second))));
 
-        var mapped = AnalysisMapper.toResponse(fen, result);
-        assertEquals(e5, mapped.topLines().get(0).move());
-        assertEquals("e5", mapped.topLines().get(0).san());
-        assertEquals(d5, mapped.topLines().get(1).move());
+        var response = AnalysisMapper.toResponse(
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", result);
+
+        assertEquals(first, response.bestMove());
+        assertEquals(first, response.topLines().get(0).move());
+        assertEquals(second, response.topLines().get(1).move());
+        assertEquals(Color.BLACK, response.evaluation().side());
     }
 }

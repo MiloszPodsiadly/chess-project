@@ -19,6 +19,11 @@ public interface GameRepository extends JpaRepository<GameEntity, UUID> {
     @Query("select g from GameEntity g where g.id = :id")
     Optional<GameEntity> findLockedById(@Param("id") UUID id);
 
+    List<GameEntity> findTop20ByGameTypeAndEngineTurnStateAndResultOrderByEngineLeaseUntilAsc(
+            com.milo.chessdomain.GameType gameType,
+            com.milo.chessdomain.GameTurnState engineTurnState,
+            com.milo.chessdomain.GameResult result);
+
     List<GameEntity> findByWhitePlayerOrBlackPlayer(UserEntity white, UserEntity black);
 
     List<GameEntity> findByResult(com.milo.chessdomain.GameResult result);

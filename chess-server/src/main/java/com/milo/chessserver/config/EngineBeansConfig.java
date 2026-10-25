@@ -10,6 +10,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @Configuration
 public class EngineBeansConfig {
@@ -28,11 +30,22 @@ public class EngineBeansConfig {
             return new UnavailableChessEngine("STOCKFISH_PATH is not configured");
         }
         int cpuLimit = Math.max(1, Runtime.getRuntime().availableProcessors());
-        int effectiveThreads = threads > 0 ? Math.min(threads, cpuLimit) : 1;
         long heapMb = Math.max(16L, Runtime.getRuntime().maxMemory() / (1024L * 1024L));
-        int effectiveHashMb = hashMb > 0 ? hashMb : (int) Math.max(16L, Math.min(64L, heapMb / 4L));
-        int autoInstances = cpuLimit >= 2 && heapMb >= 512 ? 2 : 1;
-        int effectiveInstances = instances > 0 ? Math.min(instances, cpuLimit) : autoInstances;
+        long memoryMb = containerMemoryMb(heapMb);
+        if (memoryMb < heapMb + 256L) {
+            return new UnavailableChessEngine("Insufficient container memory for Stockfish");
+        }
+        long nativeBudgetMb = Math.max(128L, memoryMb - heapMb - 192L);
+        int autoInstances = cpuLimit >= 2 && nativeBudgetMb >= 384 ? 2 : 1;
+        int effectiveInstances = instances > 0 ? Math.min(instances, Math.min(cpuLimit, 2)) : autoInstances;
+        int effectiveThreads = threads > 0 ? Math.min(threads, Math.max(1, cpuLimit / effectiveInstances)) : 1;
+        int perProcessBudgetMb = (int) Math.max(64L, nativeBudgetMb / effectiveInstances);
+        int maxHashMb = Math.max(16, perProcessBudgetMb - 96);
+        int effectiveHashMb = hashMb > 0 ? Math.min(hashMb, maxHashMb) : Math.min(64, maxHashMb);
+        if (hashMb > effectiveHashMb || threads > effectiveThreads || instances > effectiveInstances) {
+            log.warn("Stockfish settings constrained by container CPU/memory budget: processes={}, threads/process={}, hash/process={} MB",
+                    effectiveInstances, effectiveThreads, effectiveHashMb);
+        }
         UciEngineSettings settings = new UciEngineSettings(
                 enginePath,
                 effectiveThreads,
@@ -43,11 +56,27 @@ public class EngineBeansConfig {
         );
         try {
             PooledChessEngine engine = new PooledChessEngine(settings, effectiveInstances, acquireTimeoutMs);
-            log.info("Verified Stockfish 19 engine pool with {} process(es)", effectiveInstances);
+            log.info("Verified Stockfish 19 engine pool with {} process(es), {} thread(s)/process and {} MB hash/process ({} MB container budget)",
+                    effectiveInstances, effectiveThreads, effectiveHashMb, memoryMb);
             return engine;
         } catch (RuntimeException ex) {
             log.error("Stockfish startup verification failed", ex);
             return new UnavailableChessEngine(ex.getMessage());
         }
+    }
+
+    private static long containerMemoryMb(long heapMb) {
+        for (String file : new String[]{"/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"}) {
+            try {
+                String value = Files.readString(Path.of(file)).trim();
+                if (!"max".equals(value)) {
+                    long bytes = Long.parseLong(value);
+                    if (bytes > 0 && bytes < Long.MAX_VALUE / 2) return bytes / (1024L * 1024L);
+                }
+            } catch (Exception ignored) {
+                // Local development may have no cgroup memory controller.
+            }
+        }
+        return Math.max(1024L, heapMb * 4);
     }
 }
