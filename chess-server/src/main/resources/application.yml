@@ -4,8 +4,8 @@ server:
 spring:
   datasource:
     url: jdbc:postgresql://postgres:5432/chessdb
-    username: user
-    password: password
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       connection-timeout: 60000
@@ -26,7 +26,7 @@ spring:
     name: chess-backend
   security:
     jwt:
-      secret: ${JWT_SECRET:dev-check-this-secret-key-please-and-nearly-soon-move-too-env-files-as-JWT_SECRET}
+      secret: ${JWT_SECRET}
       expiration-minutes: ${JWT_EXP_MIN:120}
   flyway:
     enabled: false

@@ -15,7 +15,7 @@ Play a quick game, challenge Stockfish 19, or meet another player online. I buil
 ## Play your way
 
 - **On your own:** play on the local board or challenge Stockfish.js 19 in your browser without creating an account.
-- **Against Stockfish 19:** sign in for saved games against the native engine. Choose a beginner or training level, or try Strong, Expert, Ultimate, and Deep Challenge at full strength.
+- **Against Stockfish 19:** choose a custom level from 200 to 3190 or play against unrestricted Stockfish. Browser Lite starts quickly, Browser Full brings a larger engine, and Native offers server-side thinking time for signed-in games. Level ranges describe settings rather than measured FIDE ratings.
 - **With other players:** create or join an online room, use matchmaking, and return to a game after reconnecting.
 - **Learn from your moves:** follow the evaluation, best move, and variations in the optional analysis panel.
 
@@ -30,6 +30,8 @@ docker compose up --build -d
 ```
 
 Open **http://localhost:3000**. The build includes both engines, so there is no separate Stockfish setup. Stop the app with `docker compose down`; your database volume stays in place.
+
+Docker Compose uses a local development profile. For another deployment, set `JWT_SECRET`, `DB_USER`, `DB_PASSWORD`, and `SPRING_DATASOURCE_URL` in its environment.
 
 ## Engine source and licenses
 
