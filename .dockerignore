@@ -1,0 +1,7 @@
+.git
+.gradle
+.cache
+**/build
+**/node_modules
+**/dist
+.idea

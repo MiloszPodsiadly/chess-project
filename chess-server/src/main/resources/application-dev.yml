@@ -1,0 +1,7 @@
+spring:
+  datasource:
+    username: ${DB_USER:user}
+    password: ${DB_PASSWORD:password}
+  security:
+    jwt:
+      secret: ${JWT_SECRET:local-development-only-change-before-deployment-2026}

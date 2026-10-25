@@ -1,11 +1,11 @@
 import { Component, Input } from '@angular/core';
-import { AsyncPipe, NgForOf } from '@angular/common';
+import { AsyncPipe, NgForOf, NgIf } from '@angular/common';
 import { EngineAnalysisService } from './engine-analysis.service';
 
 @Component({
   selector: 'app-analysis-panel',
   standalone: true,
-  imports: [AsyncPipe, NgForOf],
+  imports: [AsyncPipe, NgForOf, NgIf],
   templateUrl: './analysis-panel.component.html',
   styleUrl: './analysis-panel.component.css'
 })
@@ -45,50 +45,10 @@ export class AnalysisPanelComponent {
       .join(' ');
   }
 
-  momentumBars() {
-    return this.evalHistory.slice(-24);
-  }
-
-  barHeight(value: number) {
-    const normalized = Math.min(1, Math.max(0, Math.abs(value) / 5));
-    return 18 + normalized * 22;
-  }
-
-  barClass(value: number) {
-    return value >= 0 ? 'pos' : 'neg';
-  }
-
-  lineScorePercent(score: string) {
-    const parsed = this.scoreToNumber(score);
-    if (parsed == null) {
-      return 10;
-    }
-    const normalized = Math.min(1, Math.max(0, Math.abs(parsed) / 5));
-    return 20 + normalized * 80;
-  }
-
   private evalToY(value: number, height: number) {
     const clamped = Math.max(-5, Math.min(5, value));
     const normalized = (clamped + 5) / 10;
     return height - normalized * height;
   }
 
-  private scoreToNumber(score: string) {
-    if (!score) {
-      return null;
-    }
-    const trimmed = String(score).trim();
-    if (trimmed.startsWith('M')) {
-      const mateValue = Number(trimmed.slice(1));
-      if (Number.isNaN(mateValue)) {
-        return null;
-      }
-      return mateValue > 0 ? 10 : -10;
-    }
-    const numeric = Number(trimmed);
-    if (Number.isNaN(numeric)) {
-      return null;
-    }
-    return numeric;
-  }
 }

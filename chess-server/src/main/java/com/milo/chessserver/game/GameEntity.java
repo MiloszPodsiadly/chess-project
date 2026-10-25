@@ -1,6 +1,7 @@
 package com.milo.chessserver.game;
 
 import com.milo.chessdomain.*;
+import com.milo.chessengine.config.EngineStrength;
 import com.milo.chessserver.user.UserEntity;
 import jakarta.persistence.*;
 
@@ -51,6 +52,33 @@ public class GameEntity {
 
     @Column(name = "engine_elo", nullable = false)
     private int engineElo;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "engine_mode")
+    private EngineStrength.Mode engineMode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "engine_preset")
+    private EngineStrength.Preset enginePreset;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "engine_turn_state")
+    private GameTurnState engineTurnState;
+
+    @Column(name = "engine_error", length = 256)
+    private String engineError;
+
+    @Column(name = "engine_execution_id")
+    private UUID engineExecutionId;
+
+    @Column(name = "engine_lease_until")
+    private Instant engineLeaseUntil;
+
+    @Column(name = "engine_attempts", nullable = false, columnDefinition = "integer default 0")
+    private int engineAttempts;
+
+    @Version
+    private Long version;
 
     @Column(name = "white_time_left_ms", nullable = false)
     private long whiteTimeLeftMs;
@@ -154,6 +182,22 @@ public class GameEntity {
     public void setEngineElo(int engineElo) {
         this.engineElo = engineElo;
     }
+
+    public EngineStrength.Mode getEngineMode() { return engineMode; }
+    public void setEngineMode(EngineStrength.Mode engineMode) { this.engineMode = engineMode; }
+    public EngineStrength.Preset getEnginePreset() { return enginePreset; }
+    public void setEnginePreset(EngineStrength.Preset enginePreset) { this.enginePreset = enginePreset; }
+    public GameTurnState getEngineTurnState() { return engineTurnState; }
+    public void setEngineTurnState(GameTurnState engineTurnState) { this.engineTurnState = engineTurnState; }
+    public String getEngineError() { return engineError; }
+    public void setEngineError(String engineError) { this.engineError = engineError; }
+    public UUID getEngineExecutionId() { return engineExecutionId; }
+    public void setEngineExecutionId(UUID engineExecutionId) { this.engineExecutionId = engineExecutionId; }
+    public Instant getEngineLeaseUntil() { return engineLeaseUntil; }
+    public void setEngineLeaseUntil(Instant engineLeaseUntil) { this.engineLeaseUntil = engineLeaseUntil; }
+    public int getEngineAttempts() { return engineAttempts; }
+    public void setEngineAttempts(int engineAttempts) { this.engineAttempts = engineAttempts; }
+    public Long getVersion() { return version; }
 
     public long getWhiteTimeLeftMs() {
         return whiteTimeLeftMs;

@@ -1,4 +1,4 @@
-<div class="game-shell" [class.no-header]="botMode || onlineMode">
+<div class="game-shell" [class.no-header]="botMode || onlineMode" [class.bot-mode]="botMode" [class.setup-phase]="botMode && botPhase() === 'SETUP'">
   <header class="game-header" *ngIf="!(botMode || onlineMode)">
     <div>
       <div class="title">{{ t('localGame') }}</div>
@@ -15,7 +15,7 @@
   <div class="game-grid">
     <section class="left-panel">
       <div class="info-card board-card">
-        <div class="board-shell" [class.locked]="isBoardLocked()">
+        <div class="board-shell" [class.locked]="shouldShowPreGameOverlay() && !botMode">
           <app-board
             *ngIf="(state.fen$ | async) as fen"
             [class.online-board]="onlineMode"
@@ -23,15 +23,23 @@
             [selected]="state.selectedSquare$ | async"
             [legalMoves]="(state.legalMoves$ | async) || []"
             [lastMove]="state.lastMove$ | async"
+            [checkedKingSquare]="state.checkedKingSquare$ | async"
+            [checkmate]="(state.positionStatus$ | async) === 'CHECKMATE'"
+            [checkLabel]="t('checkAlert')"
+            [checkmateLabel]="t('checkmateAlert')"
             [orientation]="boardOrientation()"
             (squareClick)="onSquareClick($event)"
           />
-          <div class="board-lock" *ngIf="isBoardLocked()">
+          <div class="board-lock" *ngIf="shouldShowPreGameOverlay() && !botMode">
             <div class="lock-card">
               <div class="lock-title">{{ boardLockTitle() }}</div>
               <div class="lock-subtitle">{{ boardLockSubtitle() }}</div>
             </div>
           </div>
+        </div>
+        <div class="position-alert" role="status" aria-live="polite" *ngIf="(state.positionStatus$ | async) as positionStatus">
+          <span *ngIf="positionStatus === 'CHECK'">{{ t('checkAlert') }}</span>
+          <span *ngIf="positionStatus === 'CHECKMATE'">{{ t('checkmateAlert') }}</span>
         </div>
       </div>
 
@@ -239,84 +247,54 @@
             {{ onlineErrorMessage(err) }}
           </div>
         </div>
-        <div class="bot-controls" *ngIf="showBotSetup">
-          <div class="setup-header">
-            <div class="setup-icon">S</div>
-            <div>
-              <div class="setup-title">{{ t('botSetup') }}</div>
-              <div class="setup-subtitle">{{ t('botSetupSubtitle') }}</div>
-            </div>
-          </div>
-          <div class="bot-grid">
-            <label>
-              {{ t('botPlayAs') }}
-              <div class="segmented">
-                <button type="button" [class.active]="botSideChoice === 'w'" (click)="botSideChoice = 'w'">
-                  {{ t('white') }}
-                </button>
-                <button type="button" [class.active]="botSideChoice === 'b'" (click)="botSideChoice = 'b'">
-                  {{ t('black') }}
-                </button>
-                <button type="button" [class.active]="botSideChoice === 'random'" (click)="botSideChoice = 'random'">
-                  {{ t('botRandom') }}
-                </button>
-              </div>
-            </label>
-            <label>
-              {{ t('botSkill') }}
-              <div class="slider">
-                <input type="range" min="200" max="2000" step="200" [(ngModel)]="botElo" />
-                <div class="slider-meta">
-                  <span>{{ botElo }} Elo</span>
-                  <span class="chip">{{ botStrengthLabel() }}</span>
-                </div>
-              </div>
-            </label>
-          </div>
-          <div class="bot-profile">
-            <div class="profile-title">{{ t('botProfile') }}</div>
-            <div class="profile-grid">
-              <div class="profile-card">
-                <span class="label">{{ t('botDepth') }}</span>
-                <span class="value">{{ botProfile().depthCap }}</span>
-              </div>
-              <div class="profile-card">
-                <span class="label">{{ t('botMoveTime') }}</span>
-                <span class="value">{{ botMoveTimeLabel() }}</span>
-              </div>
-              <div class="profile-card">
-                <span class="label">{{ t('botBlunder') }}</span>
-                <span class="value">{{ botBlunderLabel() }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="setup-actions">
-            <button class="primary" (click)="startBotGame()">{{ t('startVsBot') }}</button>
-          </div>
-          <div class="bot-status" *ngIf="botThinking">{{ t('botThinking') }}</div>
-          <div class="bot-status ready" *ngIf="!botThinking && botEnabled">{{ t('botReady') }}</div>
-        </div>
+        <app-bot-setup *ngIf="showBotSetup"
+          [lang]="lang" [execution]="botExecution" [flavor]="botEngineFlavor"
+          [elo]="botElo" [maximum]="botMaximum" [side]="botSideChoice"
+          [serverPreset]="serverPreset" [browserMaximumMs]="browserMaximumMs"
+          [thinking]="botThinking" [error]="botError"
+          (executionChange)="setBotExecution($event)"
+          (flavorChange)="setBotEngineFlavor($event)"
+          (strengthChange)="onSetupStrength($event)"
+          (sideChange)="botSideChoice = $event"
+          (serverPresetChange)="serverPreset = $event"
+          (browserMaximumMsChange)="browserMaximumMs = $event"
+          (start)="startBotGame()"
+          (signedIn)="botErrorState = null" />
       </div>
+      <app-game-result-panel *ngIf="botMode && botOutcome() as outcome"
+        [outcome]="outcome" [lang]="lang" [opponent]="botExecution === 'server' ? t('nativeEngine') : 'Stockfish.js 19'"
+        [dismissed]="dismissedOutcomeKey === outcomeKey(outcome)"
+        (playAgain)="restartBotGame()" (review)="reviewBotGame(outcome)" (changeSetup)="exitToBotSetup()" />
 
       <div class="info-card bot-actions-card" *ngIf="botMode && !showBotSetup">
         <div class="card-header">
           <div>
             <h2>{{ t('botGameTitle') }}</h2>
-            <div class="card-subtitle">{{ botElo }} Elo · {{ botStrengthLabel() }}</div>
+            <div class="card-subtitle">{{ botExecution === 'server' ? t('nativeEngine') : 'Stockfish.js 19 ' + botEngineFlavor }} · {{ botMaximum ? t('unrestricted') : botElo + ' · ' + botStrengthLabel() }}</div>
           </div>
           <div class="card-meta">
             <span class="chip">{{ t('you') }}: {{ colorLabel(playerColor) }}</span>
             <span class="chip">{{ t('botLabel') }}: {{ colorLabel(botColor) }}</span>
+            <span class="chip" role="status" aria-live="polite">{{ engineStatusLabel() }}</span>
           </div>
         </div>
         <div class="bot-actions">
           <button class="primary" *ngIf="!botGameActive" (click)="startBotGame()">{{ t('startVsBot') }}</button>
           <button class="ghost" *ngIf="botGameActive" (click)="restartBotGame()">{{ t('restartGame') }}</button>
+          <button class="ghost" *ngIf="botGameActive && !isGameFinished()" (click)="resignBotGame()">{{ t('resign') }}</button>
           <button class="ghost" (click)="exitToBotSetup()">{{ t('exitGame') }}</button>
+          <button class="ghost" *ngIf="botExecution === 'server' && serverGame?.turnState === 'ENGINE_FAILED'" (click)="retryServerBotTurn()">{{ t('engineRetry') }}</button>
         </div>
+        <div class="error" *ngIf="botError">{{ botError }}</div>
       </div>
 
-      <div class="info-card history-card" *ngIf="!onlineMode">
+      <div class="bot-sidebar-tabs segmented" *ngIf="botMode && !showBotSetup" role="tablist" [attr.aria-label]="t('botGameTitle')" (keydown)="onBotTabKeydown($event)">
+        <button type="button" role="tab" id="bot-tab-analysis" aria-controls="bot-panel-analysis" [attr.tabindex]="botSidebarTab === 'analysis' ? 0 : -1" [attr.aria-selected]="botSidebarTab === 'analysis'" [class.active]="botSidebarTab === 'analysis'" (click)="botSidebarTab = 'analysis'">{{ t('analysisTab') }}</button>
+        <button type="button" role="tab" id="bot-tab-moves" aria-controls="bot-panel-moves" [attr.tabindex]="botSidebarTab === 'moves' ? 0 : -1" [attr.aria-selected]="botSidebarTab === 'moves'" [class.active]="botSidebarTab === 'moves'" (click)="botSidebarTab = 'moves'">{{ t('movesTab') }}</button>
+        <button type="button" role="tab" id="bot-tab-settings" aria-controls="bot-panel-settings" [attr.tabindex]="botSidebarTab === 'settings' ? 0 : -1" [attr.aria-selected]="botSidebarTab === 'settings'" [class.active]="botSidebarTab === 'settings'" (click)="botSidebarTab = 'settings'">{{ t('settingsTab') }}</button>
+      </div>
+
+      <div class="info-card history-card" *ngIf="!onlineMode && (!botMode || (botPhase() !== 'SETUP' && botSidebarTab === 'moves'))" [attr.role]="botMode ? 'tabpanel' : null" id="bot-panel-moves" aria-labelledby="bot-tab-moves">
         <div class="card-header">
           <div>
             <h2>{{ t('moveHistory') }}</h2>
@@ -333,8 +311,25 @@
         <app-move-history *ngIf="(state.moves$ | async) as moves" [moves]="moves" />
       </div>
 
-      <div class="info-card analysis-card" *ngIf="!onlineMode">
+      <div class="info-card analysis-card" *ngIf="!onlineMode && (!botMode || (botPhase() !== 'SETUP' && botSidebarTab === 'analysis'))" [attr.role]="botMode ? 'tabpanel' : null" id="bot-panel-analysis" aria-labelledby="bot-tab-analysis">
+        <label *ngIf="botExecution === 'browser'">{{ t('localAnalysisEngine') }}
+          <select [value]="analysisFlavor" (change)="setAnalysisFlavor($any($event.target).value)">
+            <option value="lite">Stockfish.js 19 Lite (default)</option>
+            <option value="full">Stockfish.js 19 Full (large download)</option>
+          </select>
+        </label>
+        <p *ngIf="botExecution === 'browser' && (analysis.status$ | async) === 'loading'">{{ t('engineLoading') }}</p>
+        <p *ngIf="botExecution === 'browser' && (analysis.status$ | async) as analysisStatus">{{ analysisStatus !== 'idle' && analysisStatus !== 'ready' && analysisStatus !== 'loading' ? analysisStatus : '' }}</p>
         <app-analysis-panel [evalHistory]="evalHistory" />
+      </div>
+
+      <div class="info-card bot-settings-card" *ngIf="botMode && !showBotSetup && botSidebarTab === 'settings'" role="tabpanel" id="bot-panel-settings" aria-labelledby="bot-tab-settings">
+        <h2>{{ t('settingsTab') }}</h2>
+        <label class="toggle">
+          <span>{{ t('autoAnalysis') }}</span>
+          <input type="checkbox" [(ngModel)]="analysisEnabled" (ngModelChange)="syncAnalysisSetting()" />
+        </label>
+        <p class="field-help">{{ botExecution === 'browser' ? t('browserTradeoff') : t('nativeTradeoff') }}</p>
       </div>
 
       <div class="info-card online-actions-card" *ngIf="multiplayerGameActive()">
@@ -441,22 +436,6 @@
       </button>
     </div>
     <button class="ghost" (click)="cancelPromotion()">{{ t('cancel') }}</button>
-  </div>
-</div>
-
-<div class="promotion-overlay" *ngIf="showBotResultOverlay()">
-  <div
-    class="promotion-modal result-modal bot-result"
-    [class.result-win]="botResultClass() === 'win'"
-    [class.result-loss]="botResultClass() === 'loss'"
-    [class.result-draw]="botResultClass() === 'draw'"
-  >
-    <h3>{{ botResultTitle() }}</h3>
-    <p>{{ botResultSubtitle() }}</p>
-    <div class="result-actions">
-      <button class="promo" (click)="restartBotGame()">{{ t('restartGame') }}</button>
-      <button class="ghost" (click)="exitToBotSetup()">{{ t('exitGame') }}</button>
-    </div>
   </div>
 </div>
 

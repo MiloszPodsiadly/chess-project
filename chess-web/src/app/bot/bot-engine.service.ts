@@ -1,95 +1,50 @@
-import { Injectable } from '@angular/core';
-import { Chess } from 'chess.js';
-import { EngineConfigMapper } from './engine-config-mapper';
-import { BotMoveStrategy, CandidateMove } from './bot-move-strategy';
+import { Injectable, OnDestroy } from '@angular/core';
+import { BrowserUciEngine, BrowserEngineFlavor } from '../analysis/browser-uci-engine';
 
 @Injectable({ providedIn: 'root' })
-export class BotEngineService {
-  private worker = new Worker('/stockfish/stockfish.js');
-  private analysisId = 0;
-  private resolver: ((move: string) => void) | null = null;
-  private lastFen: string | null = null;
-  private candidates: Map<number, CandidateMove> = new Map();
-  private currentProfile = EngineConfigMapper.forElo(1200);
+export class BotEngineService implements OnDestroy {
+  private engine = new BrowserUciEngine();
+  supportsNativeElo(): boolean { return this.engine.supportsNativeElo(); }
 
-  constructor() {
-    this.worker.onmessage = (event: MessageEvent<string>) => this.handleMessage(String(event.data ?? ''));
-    this.worker.postMessage('uci');
-    this.worker.postMessage('isready');
+  private reusableEngine(): BrowserUciEngine {
+    if (this.engine.state === 'DISPOSED') this.engine = new BrowserUciEngine();
+    return this.engine;
   }
 
-  async getMove(fen: string, elo: number): Promise<string> {
-    const profile = EngineConfigMapper.forElo(elo);
-    this.currentProfile = profile;
-    this.lastFen = fen;
-
-    if (profile.moveSelection === 'RANDOM_LEGAL') {
-      const chess = new Chess(fen);
-      const moves = chess.moves({ verbose: true });
-      const random = moves[Math.floor(Math.random() * moves.length)];
-      return `${random.from}${random.to}${random.promotion ?? ''}`;
+  static effectiveSearch(elo: number | null, flavor: BrowserEngineFlavor, maximumMs = 300) {
+    if (elo !== null && (!Number.isInteger(elo) || elo < 200 || elo > 3190)) {
+      throw new RangeError('Browser strength target must be 200–3190');
     }
+    if (!Number.isInteger(maximumMs) || maximumMs < 1 || maximumMs > 10000) {
+      throw new RangeError('Browser search budget must be 1–10000 ms');
+    }
+    return { depth: 30, movetime: elo === null ? maximumMs
+      : flavor === 'full' ? 300 : elo < 1000 ? 80 : elo < 1800 ? 120 : 200 };
+  }
 
-    this.analysisId += 1;
-    const localId = this.analysisId;
-    this.candidates.clear();
+  warm(flavor: BrowserEngineFlavor = 'lite'): Promise<void> {
+    return this.reusableEngine().warm(flavor);
+  }
 
-    const movetime = EngineConfigMapper.pickTime(profile);
-    const depth = profile.depthCap;
-    const multipv = Math.max(1, profile.topMoves);
-
-    this.worker.postMessage('stop');
-    this.worker.postMessage(`setoption name MultiPV value ${multipv}`);
-    this.worker.postMessage(`position fen ${fen}`);
-    this.worker.postMessage(`go depth ${depth} movetime ${movetime}`);
-
-    return new Promise((resolve) => {
-      this.resolver = (move) => {
-        if (localId !== this.analysisId) {
-          return;
-        }
-        resolve(move);
-      };
+  getMove(fen: string, elo: number | null, flavor: BrowserEngineFlavor = 'lite', maximumMs = 300): Promise<string> {
+    const { depth, movetime } = BotEngineService.effectiveSearch(elo, flavor, maximumMs);
+    return this.reusableEngine().search(fen, {
+      depth,
+      movetime,
+      multiPv: 1,
+      target: elo ?? undefined,
+      gameplay: true,
+      flavor
     });
   }
 
-  private handleMessage(line: string) {
-    if (line.startsWith('info')) {
-      this.captureInfo(line);
-      return;
-    }
-    if (line.startsWith('bestmove') && this.resolver) {
-      const chosen = BotMoveStrategy.chooseMove([...this.candidates.values()], this.currentProfile, this.lastFen);
-      const move = chosen?.move ?? line.split(' ')[1] ?? '';
-      const resolve = this.resolver;
-      this.resolver = null;
-      resolve(move);
-    }
+  stop(): void {
+    this.engine.stop();
   }
 
-  private captureInfo(line: string) {
-    if (!line.includes(' pv ')) {
-      return;
-    }
-    const tokens = line.split(' ');
-    const pvIdx = tokens.indexOf('pv');
-    const scoreIdx = tokens.indexOf('score');
-    const multiPvIdx = tokens.indexOf('multipv');
-    if (pvIdx === -1 || scoreIdx === -1) {
-      return;
-    }
-    const move = tokens[pvIdx + 1];
-    if (!move) {
-      return;
-    }
-    const multipv = multiPvIdx !== -1 ? Number(tokens[multiPvIdx + 1]) : 1;
-    let score = 0;
-    if (tokens[scoreIdx + 1] === 'cp') {
-      score = Number(tokens[scoreIdx + 2]);
-    } else if (tokens[scoreIdx + 1] === 'mate') {
-      const mate = Number(tokens[scoreIdx + 2]);
-      score = mate > 0 ? 100000 - mate : -100000 - mate;
-    }
-    this.candidates.set(multipv, { move, score });
+  dispose(): void {
+    this.engine.dispose();
   }
+
+  ngOnDestroy(): void { this.dispose(); }
 }

@@ -12,6 +12,9 @@ public final class EngineConfigMapper {
     private EngineConfigMapper() {}
 
     public static EloProfile forElo(int elo) {
+        if (elo < 200 || elo >= 1320) {
+            throw new IllegalArgumentException("Beginner level must be 200..1319");
+        }
         if (elo <= 200) {
             return new EloProfile(200, 20, 40, 1, Integer.MAX_VALUE, MoveSelection.RANDOM_LEGAL, 0.45, 0.35);
         }
@@ -43,6 +46,14 @@ public final class EngineConfigMapper {
     }
 
     public static EngineConfig toEngineConfig(int elo, Color engineColor) {
+        if (elo < 200 || elo > 3190) {
+            throw new IllegalArgumentException("Engine target must be 200..3190");
+        }
+        if (elo >= 1320) {
+            long timeLimit = 1_000L;
+            return new EngineConfig(0, timeLimit, elo, engineColor, null,
+                    EngineStrength.training(elo, timeLimit));
+        }
         EloProfile profile = forElo(elo);
         long timeLimit = profile.pickTimeMillis(RNG.nextLong());
         SkillProfile skill = new SkillProfile(
@@ -52,6 +63,7 @@ public final class EngineConfigMapper {
                 profile.blunderProb(),
                 profile.blunderProb()
         );
-        return new EngineConfig(profile.depthCap(), timeLimit, profile.elo(), engineColor, skill);
+        return new EngineConfig(profile.depthCap(), timeLimit, elo, engineColor, skill,
+                EngineStrength.fromElo(elo, timeLimit, profile.depthCap()));
     }
 }

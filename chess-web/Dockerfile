@@ -2,7 +2,8 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+COPY scripts ./scripts
+RUN npm install -g npm@11.6.1 && npm ci
 
 COPY . .
 

@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 import { Chess } from 'chess.js';
 import { EngineMoveResponseDto } from '../multiplayer/models';
+import { BrowserUciEngine, BrowserEngineFlavor } from './browser-uci-engine';
 
 export interface AnalysisLine {
   move: string;
@@ -12,12 +13,18 @@ export interface AnalysisLine {
 
 @Injectable({ providedIn: 'root' })
 export class EngineAnalysisService {
-  private worker: Worker;
+  private readonly engine = new BrowserUciEngine();
   private lines: AnalysisLine[] = [];
+  private linesByPv = new Map<number, AnalysisLine>();
+  private latestDepth = 0;
   private pendingTimer: number | null = null;
   private lastFen: string | null = null;
+  private requestId = 0;
+  private flavor: BrowserEngineFlavor = 'lite';
+  readonly status$ = new BehaviorSubject<string>('idle');
 
-  readonly evaluation$ = new BehaviorSubject<string>('0.0');
+  readonly evaluation$ = new BehaviorSubject<string>('—');
+  readonly completedEvaluation$ = new BehaviorSubject<{ fen: string; value: string } | null>(null);
   readonly lines$ = new BehaviorSubject<AnalysisLine[]>([]);
   readonly bestMove$ = new BehaviorSubject<string | null>(null);
   readonly bestMoveSan$ = new BehaviorSubject<string | null>(null);
@@ -27,13 +34,9 @@ export class EngineAnalysisService {
   readonly nodes$ = new BehaviorSubject<number | null>(null);
   readonly nps$ = new BehaviorSubject<number | null>(null);
 
-  constructor() {
-    this.worker = new Worker('/stockfish/stockfish.js');
-    this.worker.onmessage = (event: MessageEvent<string>) => {
-      this.handleWorkerMessage(String(event.data ?? ''));
-    };
-    this.worker.postMessage('uci');
-    this.worker.postMessage('isready');
+  setFlavor(flavor: BrowserEngineFlavor) {
+    this.flavor = flavor;
+    this.stop();
   }
 
   analyze(fen: string, depth = 12, movetime = 250) {
@@ -45,13 +48,31 @@ export class EngineAnalysisService {
     }
     this.lastFen = fen;
     this.lines = [];
+    this.linesByPv.clear();
+    this.latestDepth = 0;
     this.lines$.next([]);
+    this.evaluation$.next('—');
+    this.bestMove$.next(null);
+    this.bestMoveSan$.next(null);
     this.depth$.next(null);
     this.nodes$.next(null);
     this.nps$.next(null);
-    this.worker.postMessage('stop');
-    this.worker.postMessage(`position fen ${fen}`);
-    this.worker.postMessage(`go depth ${depth} movetime ${movetime}`);
+    const requestId = ++this.requestId;
+    this.status$.next('loading');
+    void this.engine.search(fen, { depth, movetime, multiPv: 5, flavor: this.flavor },
+      line => { if (requestId === this.requestId) this.handleInfo(line); })
+      .then(move => {
+        if (requestId !== this.requestId) return;
+        this.bestMove$.next(move);
+        this.bestMoveSan$.next(this.uciToSan(move));
+        if (this.evaluation$.value !== '—') {
+          this.completedEvaluation$.next({ fen, value: this.evaluation$.value });
+        }
+        this.status$.next('ready');
+      })
+      .catch(error => {
+        if (requestId === this.requestId) this.status$.next(error.message);
+      });
   }
 
   scheduleAnalyze(fen: string, depth = 12, movetime = 250, delayMs = 200) {
@@ -61,6 +82,7 @@ export class EngineAnalysisService {
     if (this.external$.value) {
       return;
     }
+    if (this.lastFen !== fen) this.stop();
     if (this.pendingTimer) {
       window.clearTimeout(this.pendingTimer);
     }
@@ -71,7 +93,17 @@ export class EngineAnalysisService {
   }
 
   stop() {
-    this.worker.postMessage('stop');
+    if (this.pendingTimer !== null) {
+      window.clearTimeout(this.pendingTimer);
+      this.pendingTimer = null;
+    }
+    this.requestId++;
+    this.engine.stop();
+    this.status$.next('idle');
+    this.evaluation$.next('—');
+    this.bestMove$.next(null);
+    this.bestMoveSan$.next(null);
+    this.lines$.next([]);
   }
 
   toggleHints() {
@@ -82,19 +114,23 @@ export class EngineAnalysisService {
     }
   }
 
-  applyExternalAnalysis(analysis: EngineMoveResponseDto | null) {
+  applyExternalAnalysis(analysis: EngineMoveResponseDto | null, fen?: string) {
     if (!analysis) {
       return;
     }
+    this.stop();
     this.external$.next(true);
-    const evalValue = analysis.evaluation ? this.formatEval(analysis.evaluation.type, analysis.evaluation.value) : '0.0';
+    const evalValue = analysis.evaluation ? this.formatEval(analysis.evaluation.type,
+      analysis.evaluation.value, analysis.evaluation.side) : '—';
     this.evaluation$.next(evalValue);
+    if (fen && evalValue !== '—') this.completedEvaluation$.next({ fen, value: evalValue });
     this.bestMove$.next(this.toUci(analysis.bestMove));
     const topSan = analysis.topLines?.[0]?.san;
     this.bestMoveSan$.next(topSan ?? this.toUci(analysis.bestMove));
     const mapped = analysis.topLines.map((line) => ({
       move: line.san ?? this.toUci(line.move) ?? '',
-      score: line.evaluation ? this.formatEval(line.evaluation.type, line.evaluation.value) : '',
+      score: line.evaluation ? this.formatEval(line.evaluation.type,
+        line.evaluation.value, line.evaluation.side) : '',
       pv: line.principalVariation.map((m) => this.toUci(m)).filter(Boolean).join(' '),
       pvSan: (line.principalVariationSan ?? []).join(' ')
     }));
@@ -103,19 +139,12 @@ export class EngineAnalysisService {
   }
 
   useLocalAnalysis() {
+    this.stop();
     this.external$.next(false);
-  }
-
-  private handleWorkerMessage(line: string) {
-    if (line.startsWith('info')) {
-      this.handleInfo(line);
-    }
-    if (line.startsWith('bestmove')) {
-      const parts = line.split(' ');
-      const uci = parts[1] ?? null;
-      this.bestMove$.next(uci);
-      this.bestMoveSan$.next(this.uciToSan(uci));
-    }
+    this.evaluation$.next('—');
+    this.bestMove$.next(null);
+    this.bestMoveSan$.next(null);
+    this.lines$.next([]);
   }
 
   private handleInfo(line: string) {
@@ -132,11 +161,13 @@ export class EngineAnalysisService {
     if (scoreIdx === -1 || pvIdx === -1) {
       return;
     }
-    if (depthIdx !== -1) {
-      const depthValue = Number(tokens[depthIdx + 1]);
-      if (!Number.isNaN(depthValue)) {
-        this.depth$.next(depthValue);
-      }
+    if (tokens.includes('lowerbound') || tokens.includes('upperbound')) return;
+    const depthValue = depthIdx === -1 ? 0 : Number(tokens[depthIdx + 1]);
+    if (!Number.isFinite(depthValue) || depthValue < this.latestDepth) return;
+    if (depthValue > this.latestDepth) {
+      this.latestDepth = depthValue;
+      this.linesByPv.clear();
+      this.depth$.next(depthValue);
     }
     if (nodesIdx !== -1) {
       const nodesValue = Number(tokens[nodesIdx + 1]);
@@ -152,10 +183,12 @@ export class EngineAnalysisService {
     }
     let score = '';
     if (tokens[scoreIdx + 1] === 'cp') {
-      score = (Number(tokens[scoreIdx + 2]) / 100).toFixed(2);
+      const sign = this.lastFen?.split(' ')[1] === 'b' ? -1 : 1;
+      score = (sign * Number(tokens[scoreIdx + 2]) / 100).toFixed(2);
     } else if (tokens[scoreIdx + 1] === 'mate') {
       const mateValue = tokens[scoreIdx + 2];
-      score = `M${mateValue}`;
+      const sign = this.lastFen?.split(' ')[1] === 'b' ? -1 : 1;
+      score = `M${sign * Number(mateValue)}`;
     }
     const pvMoves = tokens.slice(pvIdx + 1, pvIdx + 6);
     const pv = pvMoves.join(' ');
@@ -165,10 +198,10 @@ export class EngineAnalysisService {
       return;
     }
     const entry = { move, score, pv, pvSan: this.toSanLine(pvMoves) };
-    this.lines[pvIndex - 1] = entry;
-    this.lines = this.lines.filter(Boolean).slice(0, 5);
+    this.linesByPv.set(pvIndex, entry);
+    this.lines = [...this.linesByPv.entries()].sort((a, b) => a[0] - b[0]).map(([, line]) => line).slice(0, 5);
     this.lines$.next([...this.lines]);
-    if (depthIdx !== -1) {
+    if (pvIndex === 1) {
       this.evaluation$.next(score || this.evaluation$.value);
     }
   }
@@ -199,11 +232,12 @@ export class EngineAnalysisService {
     }
   }
 
-  private formatEval(type: 'CP' | 'MATE', value: number) {
+  private formatEval(type: 'CP' | 'MATE', value: number, side: 'WHITE' | 'BLACK') {
+    const whiteValue = side === 'BLACK' ? -value : value;
     if (type === 'MATE') {
-      return `M${value}`;
+      return `M${whiteValue}`;
     }
-    return (value / 100).toFixed(2);
+    return (whiteValue / 100).toFixed(2);
   }
 
   private uciToSan(uci: string | null) {

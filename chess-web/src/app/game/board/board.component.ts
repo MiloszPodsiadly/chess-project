@@ -15,6 +15,10 @@ export class BoardComponent {
   @Input({ required: true }) fen = '';
   @Input() selected: string | null = null;
   @Input() lastMove: { from: string; to: string } | null = null;
+  @Input() checkedKingSquare: string | null = null;
+  @Input() checkmate = false;
+  @Input() checkLabel = 'Check';
+  @Input() checkmateLabel = 'Checkmate';
   @Input() orientation: 'white' | 'black' = 'white';
   @Output() squareClick = new EventEmitter<string>();
 
@@ -83,6 +87,11 @@ export class BoardComponent {
 
   trackByIndex(index: number): number {
     return index;
+  }
+
+  squareLabel(square: string): string {
+    return square === this.checkedKingSquare
+      ? `${square}, ${this.checkmate ? this.checkmateLabel : this.checkLabel}` : square;
   }
 
   private rebuildBoard(): void {

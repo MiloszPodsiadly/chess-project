@@ -24,13 +24,28 @@ services:
       dockerfile: Dockerfile
     image: chess-backend:local
     container_name: chess-backend
+    mem_limit: 1g
+    cpus: 2
     ports:
       - "8080:8080"
     environment:
       SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chessdb
       SPRING_DATASOURCE_USERNAME: user
       SPRING_DATASOURCE_PASSWORD: password
+      STOCKFISH_PATH: ${STOCKFISH_PATH:-/usr/local/bin/stockfish}
+      STOCKFISH_THREADS: ${STOCKFISH_THREADS:-0}
+      STOCKFISH_HASH_MB: ${STOCKFISH_HASH_MB:-0}
+      STOCKFISH_ENGINE_INSTANCES: ${STOCKFISH_ENGINE_INSTANCES:-0}
+      STOCKFISH_ACQUIRE_TIMEOUT_MS: ${STOCKFISH_ACQUIRE_TIMEOUT_MS:-1000}
+      STOCKFISH_SEARCH_TIMEOUT_MS: ${STOCKFISH_SEARCH_TIMEOUT_MS:-5000}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/engine/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy

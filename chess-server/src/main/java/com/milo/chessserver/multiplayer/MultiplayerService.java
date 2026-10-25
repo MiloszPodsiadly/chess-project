@@ -7,6 +7,7 @@ import com.milo.chessdomain.multiplayer.*;
 import com.milo.chessengine.ChessEngine;
 import com.milo.chessengine.config.EngineConfig;
 import com.milo.chessengine.config.EngineConfigMapper;
+import com.milo.chessengine.config.EngineStrength;
 import com.milo.chessengine.core.EngineResult;
 import com.milo.chessengine.core.Position;
 import com.milo.chessserver.game.*;
@@ -783,14 +784,17 @@ public class MultiplayerService {
             return null;
         }
         EngineConfig base = EngineConfigMapper.toEngineConfig(analysisElo, game.getSideToMove());
+        int depth = analysisDepth > 0 ? analysisDepth : base.requestedDepth();
+        long timeMs = analysisTimeMs > 0 ? analysisTimeMs : base.hardTimeLimitMillis();
         EngineConfig config = new EngineConfig(
-                analysisDepth > 0 ? analysisDepth : base.requestedDepth(),
-                analysisTimeMs > 0 ? analysisTimeMs : base.hardTimeLimitMillis(),
+                depth,
+                timeMs,
                 base.engineElo(),
                 base.engineColor(),
-                base.skillProfile()
+                base.skillProfile(),
+                EngineStrength.analysis(timeMs, depth, Math.max(1, Math.min(5, analysisMaxLines)))
         );
-        EngineResult result = chessEngine.findBestMove(new Position(game.getCurrentFen(), game.getSideToMove()), config);
+        EngineResult result = chessEngine.analyseFen(game.getCurrentFen(), game.getSideToMove(), config);
         return AnalysisMapper.toResponse(game.getCurrentFen(), result, analysisMaxLines);
     }
 
