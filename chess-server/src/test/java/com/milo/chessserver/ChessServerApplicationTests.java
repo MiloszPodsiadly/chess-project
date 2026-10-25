@@ -3,6 +3,7 @@ package com.milo.chessserver;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import com.milo.chessserver.game.GameMoveRepository;
 import com.milo.chessserver.game.GamePlayerRepository;
@@ -20,6 +21,9 @@ import com.milo.chessserver.user.UserRepository;
                 "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration"
 })
 class ChessServerApplicationTests {
+
+    @MockBean
+    private PlatformTransactionManager transactionManager;
 
     @MockBean
     private UserRepository userRepository;

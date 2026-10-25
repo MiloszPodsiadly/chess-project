@@ -4,11 +4,20 @@ import com.milo.chessserver.user.UserEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 public interface GameRepository extends JpaRepository<GameEntity, UUID> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select g from GameEntity g where g.id = :id")
+    Optional<GameEntity> findLockedById(@Param("id") UUID id);
 
     List<GameEntity> findByWhitePlayerOrBlackPlayer(UserEntity white, UserEntity black);
 

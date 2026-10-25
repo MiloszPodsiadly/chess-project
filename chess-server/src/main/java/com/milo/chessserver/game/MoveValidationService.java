@@ -55,9 +55,6 @@ public class MoveValidationService {
         } else if (isThreefoldRepetition(previousFens, board.getFen())) {
             result = GameResult.DRAW;
             endReason = GameEndReason.THREEFOLD_REPETITION;
-        } else if (board.isRepetition()) {
-            result = GameResult.DRAW;
-            endReason = GameEndReason.THREEFOLD_REPETITION;
         } else if (board.getHalfMoveCounter() != null && board.getHalfMoveCounter() >= 100) {
             result = GameResult.DRAW;
             endReason = GameEndReason.FIFTY_MOVE_RULE;
@@ -67,7 +64,7 @@ public class MoveValidationService {
     }
 
     private Move toMove(Board board, MoveDto moveDto) {
-        if (moveDto == null) {
+        if (moveDto == null || moveDto.from() == null || moveDto.to() == null) {
             return null;
         }
         Square from = Square.fromValue(moveDto.from().toUpperCase());

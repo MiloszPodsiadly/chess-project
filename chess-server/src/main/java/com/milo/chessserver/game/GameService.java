@@ -43,6 +43,9 @@ public class GameService {
                 : new MoveDto(moveDto.from(), moveDto.to(), moveDto.promotion(), game.getSideToMove());
 
         List<String> fenHistory = new java.util.ArrayList<>(moveRepository.findFenAfterMoveByGameIdOrderByMoveNumberAsc(gameId));
+        if (game.getVariant() == com.milo.chessdomain.GameVariant.STANDARD) {
+            fenHistory.add(0, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        }
         if (fenHistory.isEmpty()) {
             fenHistory.add(game.getCurrentFen());
         }

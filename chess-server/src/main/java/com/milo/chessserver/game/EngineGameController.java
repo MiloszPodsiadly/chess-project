@@ -3,6 +3,7 @@ package com.milo.chessserver.game;
 import com.milo.chessdomain.Color;
 import com.milo.chessdomain.game.GameStateDto;
 import com.milo.chessdomain.game.MoveDto;
+import com.milo.chessengine.config.EngineStrength;
 import com.milo.chessserver.user.UserEntity;
 import com.milo.chessserver.user.UserRepository;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,25 +28,48 @@ public class EngineGameController {
     @PostMapping
     public GameStateDto createGame(@RequestParam(defaultValue = "WHITE") Color playerColor,
                                    @RequestParam(defaultValue = "2400") int engineElo,
+                                   @RequestParam(required = false) EngineStrength.Mode mode,
+                                   @RequestParam(defaultValue = "STRONG") EngineStrength.Preset preset,
                                    @RequestParam(defaultValue = "RAPID") com.milo.chessdomain.TimeControlType timeControlType,
                                    @AuthenticationPrincipal User principal) {
 
         UserEntity user = userRepository.findByUsername(principal.getUsername())
                 .orElseThrow();
 
-        return gameService.startNewVsEngineGame(user, playerColor, engineElo, timeControlType);
+        return gameService.startNewVsEngineGame(user, playerColor, engineElo, timeControlType, mode, preset);
     }
 
     @PostMapping("/{id}/move")
     public GameStateDto makeMove(@PathVariable UUID id,
                                  @RequestParam(defaultValue = "2400") int engineElo,
                                  @RequestParam(defaultValue = "RAPID") com.milo.chessdomain.TimeControlType timeControlType,
+                                 @RequestParam(required = false) Long expectedVersion,
                                  @RequestBody MoveDto move,
                                  @AuthenticationPrincipal User principal) {
 
         UserEntity user = userRepository.findByUsername(principal.getUsername())
                 .orElseThrow();
 
-        return gameService.playerMove(id, user, move, engineElo, timeControlType);
+        return gameService.playerMove(id, user, move, expectedVersion);
+    }
+
+    @GetMapping("/{id}")
+    public GameStateDto get(@PathVariable UUID id, @AuthenticationPrincipal User principal) {
+        return gameService.getGame(id, userRepository.findByUsername(principal.getUsername()).orElseThrow());
+    }
+
+    @PostMapping("/{id}/retry")
+    public GameStateDto retry(@PathVariable UUID id, @AuthenticationPrincipal User principal) {
+        return gameService.retryEngineTurn(id, userRepository.findByUsername(principal.getUsername()).orElseThrow());
+    }
+
+    @PostMapping("/{id}/resign")
+    public GameStateDto resign(@PathVariable UUID id, @AuthenticationPrincipal User principal) {
+        return gameService.resign(id, userRepository.findByUsername(principal.getUsername()).orElseThrow());
+    }
+
+    @PostMapping("/{id}/restart")
+    public GameStateDto restart(@PathVariable UUID id, @AuthenticationPrincipal User principal) {
+        return gameService.restart(id, userRepository.findByUsername(principal.getUsername()).orElseThrow());
     }
 }

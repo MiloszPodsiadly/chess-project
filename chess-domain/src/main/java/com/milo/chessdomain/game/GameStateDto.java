@@ -16,5 +16,18 @@ public record GameStateDto(
         EvaluationDto evaluation,
         EngineMoveResponseDto analysis,
         Instant createdAt,
-        Instant lastMoveAt
-) {}
+        Instant lastMoveAt,
+        GameTurnState turnState,
+        Long version,
+        String engineError,
+        String engineMode,
+        String enginePreset,
+        Integer engineElo
+) {
+    public GameStateDto(UUID gameId, String fen, Color sideToMove, GameResult result,
+                        GameEndReason endReason, List<MoveDto> moves, EvaluationDto evaluation,
+                        EngineMoveResponseDto analysis, Instant createdAt, Instant lastMoveAt) {
+        this(gameId, fen, sideToMove, result, endReason, moves, evaluation, analysis,
+                createdAt, lastMoveAt, null, null, null, null, null, null);
+    }
+}

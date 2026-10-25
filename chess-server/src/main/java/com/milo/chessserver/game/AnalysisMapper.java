@@ -71,8 +71,7 @@ public final class AnalysisMapper {
         int limit = Math.max(1, maxLines);
         List<AnalysisLineDto> lines = new ArrayList<>();
         candidates.stream()
-                .sorted(Comparator.comparingInt(AnalysisMapper::scoreForOrdering))
-                .skip(Math.max(0, candidates.size() - limit))
+                .sorted(Comparator.comparingInt(AnalysisMapper::scoreForOrdering).reversed())
                 .limit(limit)
                 .forEach(c -> {
                     List<String> pvSan = toSanList(fen, c.principalVariation());
@@ -120,7 +119,7 @@ public final class AnalysisMapper {
                 return List.of();
             }
             return java.util.Arrays.asList(sanArray);
-        } catch (MoveConversionException ex) {
+        } catch (MoveConversionException | IllegalArgumentException | NullPointerException ex) {
             return List.of();
         }
     }

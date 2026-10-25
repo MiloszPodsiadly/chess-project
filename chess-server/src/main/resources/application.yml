@@ -35,8 +35,10 @@ chess:
   engine:
     uci:
       path: ${STOCKFISH_PATH:}
-      threads: ${STOCKFISH_THREADS:2}
-      hash-mb: ${STOCKFISH_HASH_MB:64}
+      threads: ${STOCKFISH_THREADS:0}
+      hash-mb: ${STOCKFISH_HASH_MB:0}
+      engine-instances: ${STOCKFISH_ENGINE_INSTANCES:0}
+      acquire-timeout-ms: ${STOCKFISH_ACQUIRE_TIMEOUT_MS:1000}
       multipv: ${STOCKFISH_MULTIPV:5}
       ready-timeout-ms: ${STOCKFISH_READY_TIMEOUT_MS:3000}
       search-timeout-ms: ${STOCKFISH_SEARCH_TIMEOUT_MS:5000}
