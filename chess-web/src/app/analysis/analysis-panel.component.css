@@ -118,6 +118,16 @@
 .analysis-lines {
   display: grid;
   gap: 8px;
+  max-height: min(42vh, 420px);
+  overflow: auto;
+}
+
+.evaluation-history {
+  width: 100%;
+  height: 70px;
+  border: 1px solid #344958;
+  border-radius: 10px;
+  background: #0c141b;
 }
 
 .analysis-lines .line {
@@ -141,6 +151,9 @@
 
 .analysis-lines .pv {
   color: #8f9bb0;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .hidden {

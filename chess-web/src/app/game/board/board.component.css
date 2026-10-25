@@ -1,11 +1,11 @@
 :host {
   display: block;
   width: 100%;
-  --board-size: 95%;
+  --board-size: min(100%, calc(100dvh - 100px));
 }
 
 :host(.online-board) {
-  --board-size: 90%;
+  --board-size: min(100%, calc(100dvh - 100px));
 }
 
 .board {
@@ -14,9 +14,8 @@
   grid-template-columns: repeat(8, 1fr);
   gap: 0;
   width: var(--board-size);
-  height: var(--board-size);
+  height: auto;
   max-width: var(--board-size);
-  max-height: var(--board-size);
   margin: 0 auto;
   aspect-ratio: 1 / 1;
   border-radius: 18px;

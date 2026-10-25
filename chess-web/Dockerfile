@@ -3,7 +3,7 @@ WORKDIR /app
 
 COPY package*.json ./
 COPY scripts ./scripts
-RUN npm ci
+RUN npm install -g npm@11.6.1 && npm ci
 
 COPY . .
 

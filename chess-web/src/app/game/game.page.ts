@@ -15,7 +15,7 @@ import { Chess } from 'chess.js';
 import { ActivatedRoute } from '@angular/router';
 import { TimeControlType } from '../multiplayer/models';
 import { EngineConfigMapper } from '../bot/engine-config-mapper';
-import { combineLatest } from 'rxjs';
+import { strengthCategory } from '../bot/strength-catalog';
 
 type PieceCode = string | null;
 
@@ -31,13 +31,27 @@ export class GamePageComponent {
   promotionOptions = ['q', 'r', 'b', 'n'];
   botEnabled = false;
   botElo = 1200;
+  botMaximum = false;
+  botSidebarTab: 'analysis' | 'moves' | 'settings' = 'analysis';
+  botAuthMode: 'login' | 'register' = 'login';
+  readonly strengthChoices = [
+    { key: 'rookie', min: 200, max: 599, target: 400 },
+    { key: 'beginner', min: 600, max: 999, target: 800 },
+    { key: 'casual', min: 1000, max: 1319, target: 1200 },
+    { key: 'intermediate', min: 1320, max: 1799, target: 1500 },
+    { key: 'advanced', min: 1800, max: 2299, target: 2000 },
+    { key: 'expert', min: 2300, max: 2799, target: 2600 },
+    { key: 'master', min: 2800, max: 3190, target: 3000 }
+  ] as const;
   botColor: 'w' | 'b' = 'b';
-  botSideChoice: 'w' | 'b' | 'random' = 'b';
+  botSideChoice: 'w' | 'b' | 'random' = 'w';
   playerColor: 'w' | 'b' = 'w';
   botGameActive = false;
   botMode = false;
   botThinking = false;
+  botResigned = false;
   botExecution: 'browser' | 'server' = 'browser';
+  botEngineFlavor: 'lite' | 'full' = 'lite';
   analysisFlavor: 'lite' | 'full' = 'lite';
 
   setAnalysisFlavor(flavor: 'lite' | 'full') {
@@ -45,14 +59,16 @@ export class GamePageComponent {
     this.analysis.setFlavor(flavor);
     if (this.botExecution === 'browser') this.analysis.scheduleAnalyze(this.state.fen$.value);
   }
-  serverMode: ServerEngineMode = 'FULL_STRENGTH';
-  serverPreset: StrengthPreset = 'ULTIMATE';
+  serverMode: ServerEngineMode = 'BEGINNER';
+  serverPreset: StrengthPreset = 'STRONG';
   serverGame: ServerEngineGame | null = null;
   botError = '';
   botUsername = '';
   botPassword = '';
   botEmail = '';
   private botEpoch = 0;
+  private serverTurnPoll: number | null = null;
+  private serverPollFailures = 0;
   showBotSetup = false;
   analysisEnabled = true;
   evalHistory: number[] = [];
@@ -154,6 +170,18 @@ export class GamePageComponent {
       skip: 'Skip',
       botSetup: 'Bot setup',
       botSetupSubtitle: 'Configure strength, color, and analysis',
+      engineLocation: 'Engine location', browserFast: 'Browser · fast local play',
+      nativeServer: 'Native · server Stockfish 19', browserFlavor: 'Browser engine',
+      browserTradeoff: 'Fast local moves; speed and strength depend on your device.',
+      nativeTradeoff: 'Server play with configurable thinking time. Sign in to save games.',
+      firstLoadNote: 'The first engine download can take longer. Later moves reuse the worker.',
+      difficulty: 'Difficulty', difficultyNote: 'These ranges are intended settings, not measured FIDE ratings.',
+      rookie: 'Rookie', beginner: 'Beginner', casual: 'Casual', intermediate: 'Intermediate',
+      advanced: 'Advanced', expert: 'Expert', master: 'Master', maximum: 'Maximum',
+      unrestricted: 'Unrestricted Stockfish 19', customLevel: 'Custom level (200–3190)',
+      account: 'Account', accountName: 'Username', email: 'Email', password: 'Password',
+      authRequired: 'Enter username and password; email is also required to register.',
+      analysisTab: 'Analysis', movesTab: 'Moves', settingsTab: 'Settings', changeSetup: 'Change setup',
       nativeEngine: 'Stockfish 19 Native',
       browserEngine: 'Stockfish.js 19 (guest)',
       guestDescription: 'Play locally without an account. Games are not saved on the server.',
@@ -295,6 +323,18 @@ export class GamePageComponent {
       skip: 'Pomin',
       botSetup: 'Ustawienia bota',
       botSetupSubtitle: 'Ustaw sile, kolor i analize',
+      engineLocation: 'Miejsce działania silnika', browserFast: 'Przeglądarka · szybka gra lokalna',
+      nativeServer: 'Natywny · Stockfish 19 na serwerze', browserFlavor: 'Silnik przeglądarki',
+      browserTradeoff: 'Szybkie ruchy lokalne; tempo i siła zależą od urządzenia.',
+      nativeTradeoff: 'Gra na serwerze z wyborem czasu namysłu. Zaloguj się, aby zapisać partię.',
+      firstLoadNote: 'Pierwsze pobranie silnika może potrwać dłużej. Następne ruchy używają tego samego silnika.',
+      difficulty: 'Poziom trudności', difficultyNote: 'Przedziały to ustawienia, nie zmierzone rankingi FIDE.',
+      rookie: 'Nowicjusz', beginner: 'Początkujący', casual: 'Swobodny', intermediate: 'Średni',
+      advanced: 'Zaawansowany', expert: 'Ekspert', master: 'Mistrz', maximum: 'Maksimum',
+      unrestricted: 'Stockfish 19 bez ograniczeń', customLevel: 'Własny poziom (200–3190)',
+      account: 'Konto', accountName: 'Nazwa użytkownika', email: 'Email', password: 'Hasło',
+      authRequired: 'Podaj nazwę użytkownika i hasło; przy rejestracji także email.',
+      analysisTab: 'Analiza', movesTab: 'Ruchy', settingsTab: 'Ustawienia', changeSetup: 'Zmień ustawienia',
       nativeEngine: 'Stockfish 19 na serwerze',
       browserEngine: 'Stockfish.js 19 (gosc)',
       guestDescription: 'Graj lokalnie bez konta. Partie nie sa zapisywane na serwerze.',
@@ -378,6 +418,9 @@ export class GamePageComponent {
     this.botExecution = this.engineApi.authenticated ? 'server' : 'browser';
     destroyRef.onDestroy(() => {
       this.destroyed = true;
+      this.invalidateBotSession();
+      this.botEngine.dispose();
+      this.analysis.stop();
       if (this.clockTimer) {
         window.clearInterval(this.clockTimer);
         this.clockTimer = null;
@@ -439,7 +482,7 @@ export class GamePageComponent {
         );
         this.pendingServerMove = false;
         if (game.analysis) {
-          this.analysis.applyExternalAnalysis(game.analysis);
+          this.analysis.applyExternalAnalysis(game.analysis, game.fen);
         } else {
           this.analysis.useLocalAnalysis();
           this.analysis.scheduleAnalyze(game.fen);
@@ -503,17 +546,15 @@ export class GamePageComponent {
         this.pendingServerMove = false;
       });
 
-    combineLatest([this.analysis.evaluation$, this.state.moves$, this.analysis.enabled$])
+    this.analysis.completedEvaluation$
       .pipe(takeUntilDestroyed(destroyRef))
-      .subscribe(([evaluation, moves, enabled]) => {
-        if (!enabled) {
-          return;
-        }
-        const value = this.parseEvalValue(evaluation);
+      .subscribe((completed) => {
+        if (!completed || !this.analysis.enabled$.value || completed.fen !== this.state.fen$.value) return;
+        const value = this.parseEvalValue(completed.value);
         if (value == null) {
           return;
         }
-        const index = moves.length;
+        const index = this.state.moves$.value.length;
         this.evalHistory[index] = value;
         if (this.evalHistory.length > index + 1) {
           this.evalHistory = this.evalHistory.slice(0, index + 1);
@@ -524,6 +565,7 @@ export class GamePageComponent {
       .pipe(takeUntilDestroyed(destroyRef))
       .subscribe((params) => {
         const mode = params.get('mode');
+        if (this.botMode && mode !== 'bot') this.invalidateBotSession();
         if (mode === 'bot') {
           if (this.multiplayer.connected$.value || this.multiplayer.gameState$.value?.gameId) {
             this.disconnectOnlineSession();
@@ -557,6 +599,9 @@ export class GamePageComponent {
           this.analysis.stop();
           this.evalHistory = [];
           if (this.botExecution === 'server') void this.resumeServerBotGame();
+          else void this.botEngine.warm(this.botEngineFlavor).catch(error => {
+            if (!this.destroyed && this.showBotSetup) this.botError = error.message;
+          });
         } else {
           this.botGameActive = false;
           this.botEnabled = false;
@@ -574,10 +619,7 @@ export class GamePageComponent {
   }
 
   onSquareClick(square: string) {
-    if (this.isBoardLocked()) {
-      return;
-    }
-    if (this.pendingServerMove) {
+    if (!this.canHumanMove()) {
       return;
     }
     const selected = this.state.selectedSquare$.value;
@@ -623,10 +665,7 @@ export class GamePageComponent {
     if (!this.pendingPromotion) {
       return;
     }
-    if (this.isBoardLocked()) {
-      return;
-    }
-    if (this.pendingServerMove) {
+    if (!this.canHumanMove()) {
       return;
     }
     const multiplayerGameId = this.multiplayer.gameState$.value?.gameId;
@@ -661,7 +700,8 @@ export class GamePageComponent {
   }
 
   async maybeBotMove() {
-    if (this.botExecution !== 'browser' || !this.botEnabled || this.multiplayer.gameState$.value?.gameId) {
+    if (this.destroyed || this.botExecution !== 'browser' || !this.botEnabled
+        || this.isGameFinished() || this.multiplayer.gameState$.value?.gameId) {
       return;
     }
     if (this.state.sideToMove$.value !== this.botColor) {
@@ -671,11 +711,14 @@ export class GamePageComponent {
       return;
     }
     this.botThinking = true;
+    this.analysis.stop();
     const epoch = this.botEpoch;
     const fen = this.state.fen$.value;
     let move: string;
     try {
-      move = await this.botEngine.getMove(fen, this.botElo);
+      move = await this.botEngine.getMove(fen, this.botMaximum ? null : this.botElo,
+        this.botEngineFlavor, this.serverPreset === 'DEEP_CHALLENGE' ? 60000
+          : this.serverPreset === 'ULTIMATE' ? 30000 : this.serverPreset === 'EXPERT' ? 10000 : 3000);
     } catch (error) {
       if (epoch === this.botEpoch) {
         this.botThinking = false;
@@ -691,6 +734,13 @@ export class GamePageComponent {
     const from = move.slice(0, 2);
     const to = move.slice(2, 4);
     const promotion = move.length > 4 ? move[4] : undefined;
+    const legal = new Chess(fen).moves({ verbose: true }).some(candidate =>
+      candidate.from === from && candidate.to === to && (candidate.promotion ?? undefined) === promotion);
+    if (!legal) {
+      this.botThinking = false;
+      this.botError = 'Browser engine returned an illegal move';
+      return;
+    }
     const moved = this.state.attemptMove(from, to, promotion);
     if (moved) {
       this.analysis.scheduleAnalyze(this.state.fen$.value);
@@ -700,6 +750,10 @@ export class GamePageComponent {
 
   async signInForEngine(register = false) {
     this.botError = '';
+    if (!this.botUsername.trim() || !this.botPassword || (register && !this.botEmail.trim())) {
+      this.botError = this.t('authRequired');
+      return;
+    }
     try {
       await this.engineApi.authenticate(this.botUsername.trim(), this.botPassword,
         register ? this.botEmail.trim() : undefined);
@@ -709,12 +763,27 @@ export class GamePageComponent {
     }
   }
 
-  onServerModeChange() {
-    if (this.serverMode === 'TRAINING') this.botElo = 1520;
-    if (this.serverMode === 'BEGINNER') this.botElo = 800;
+  selectStrength(target: number) {
+    this.botMaximum = false;
+    this.botElo = target;
+    this.serverMode = target < 1320 ? 'BEGINNER' : 'TRAINING';
+  }
+
+  selectMaximum() {
+    this.botMaximum = true;
+    this.serverMode = 'FULL_STRENGTH';
+  }
+
+  onCustomStrength(value: number) {
+    this.botMaximum = false;
+    this.botElo = value;
+    if (Number.isInteger(value) && value >= 200 && value <= 3190) {
+      this.serverMode = value < 1320 ? 'BEGINNER' : 'TRAINING';
+    }
   }
 
   private async resumeServerBotGame() {
+    const epoch = this.botEpoch;
     let id: string | null = null;
     try {
       id = sessionStorage.getItem('chessEngineGameId');
@@ -727,41 +796,57 @@ export class GamePageComponent {
     if (!id) return;
     try {
       const game = await this.engineApi.get(id);
-      this.applyServerBotGame(game);
+      if (epoch === this.botEpoch && !this.destroyed && this.botExecution === 'server') {
+        this.applyServerBotGame(game);
+      }
     } catch (error) {
-      this.botError = error instanceof Error ? error.message : 'Could not resume game';
+      if (epoch === this.botEpoch && !this.destroyed) {
+        this.botError = error instanceof Error ? error.message : 'Could not resume game';
+      }
     }
   }
 
   private async submitServerBotMove(from: string, to: string, promotion?: string) {
     const game = this.serverGame;
-    if (!game || game.turnState !== 'PLAYER_TURN' || game.result !== 'ONGOING') return;
+    if (this.pendingServerMove || !game || game.turnState !== 'PLAYER_TURN' || game.result !== 'ONGOING') return;
     if (this.state.sideToMove$.value !== this.playerColor) return;
+    this.pendingServerMove = true;
     const epoch = ++this.botEpoch;
     this.botThinking = true;
     this.botError = '';
     this.state.clearSelection();
     try {
       const response = await this.engineApi.move(game.gameId, game.version, { from, to, promotion });
-      if (epoch === this.botEpoch) this.applyServerBotGame(response);
+      if (epoch === this.botEpoch && !this.destroyed) this.applyServerBotGame(response);
     } catch (error) {
       if (epoch !== this.botEpoch) return;
       this.botError = error instanceof Error ? error.message : 'Move failed';
       try {
-        this.applyServerBotGame(await this.engineApi.get(game.gameId));
+        const refreshed = await this.engineApi.get(game.gameId);
+        if (epoch === this.botEpoch && !this.destroyed) this.applyServerBotGame(refreshed);
       } catch { this.botThinking = false; }
+    } finally {
+      if (epoch === this.botEpoch) this.pendingServerMove = false;
     }
   }
 
   private applyServerBotGame(game: ServerEngineGame) {
+    if (this.serverTurnPoll !== null) window.clearTimeout(this.serverTurnPoll);
+    this.serverTurnPoll = null;
+    this.serverPollFailures = 0;
+    this.playerColor = game.playerColor === 'WHITE' ? 'w' : 'b';
+    this.botColor = this.playerColor === 'w' ? 'b' : 'w';
     this.serverGame = game;
     this.serverMode = game.engineMode ?? this.serverMode;
+    this.botMaximum = this.serverMode === 'FULL_STRENGTH';
     this.serverPreset = game.enginePreset ?? this.serverPreset;
     if (game.engineElo != null) this.botElo = game.engineElo;
     this.botThinking = game.turnState === 'ENGINE_THINKING';
     this.botEnabled = true;
     this.botGameActive = true;
+    this.botResigned = false;
     this.showBotSetup = false;
+    this.botSidebarTab = 'analysis';
     try { sessionStorage.setItem('chessEngineGameId', game.gameId); } catch { /* Private browsing. */ }
     try { sessionStorage.setItem('chessEnginePlayerColor', this.playerColor); } catch { /* Private browsing. */ }
     const replay = new Chess();
@@ -781,8 +866,31 @@ export class GamePageComponent {
     } else if (game.turnState === 'ENGINE_FAILED') {
       this.botError = game.engineError ?? 'Engine move failed. Retry the turn.';
     }
-    this.analysis.scheduleAnalyze(game.fen);
+    if (game.turnState === 'ENGINE_THINKING') this.analysis.stop();
+    else this.analysis.scheduleAnalyze(game.fen);
+    if (game.turnState === 'ENGINE_THINKING') this.pollServerEngineTurn(game.gameId, this.botEpoch);
     this.cdr.markForCheck();
+  }
+
+  private pollServerEngineTurn(gameId: string, epoch: number) {
+    this.serverTurnPoll = window.setTimeout(async () => {
+      if (this.destroyed || epoch !== this.botEpoch || this.serverGame?.gameId !== gameId) return;
+      try {
+        const game = await this.engineApi.get(gameId);
+        if (this.destroyed || epoch !== this.botEpoch || this.serverGame?.gameId !== gameId) return;
+        this.applyServerBotGame(game);
+      } catch (error) {
+        if (this.destroyed || epoch !== this.botEpoch) return;
+        this.serverPollFailures++;
+        if (this.serverPollFailures >= 5) {
+          this.botError = error instanceof Error ? error.message : 'Could not refresh engine turn';
+          this.botThinking = false;
+        } else {
+          this.serverTurnPoll = window.setTimeout(() => this.pollServerEngineTurn(gameId, epoch),
+            1000 * this.serverPollFailures);
+        }
+      }
+    }, 700);
   }
 
   async retryServerBotTurn() {
@@ -814,9 +922,11 @@ export class GamePageComponent {
   }
 
   async startBotGame() {
-    this.botEngine.stop();
-    this.botEpoch++;
-    this.botThinking = false;
+    if (!this.botMaximum && !this.validStrengthTarget()) {
+      this.botError = 'Strength target must be a whole number from 200 to 3190';
+      return;
+    }
+    this.invalidateBotSession();
     if (this.multiplayer.connected$.value || this.onlineMode) {
       this.disconnectOnlineSession();
     }
@@ -826,8 +936,8 @@ export class GamePageComponent {
           ? 'w'
           : 'b'
         : this.botSideChoice;
-    this.botColor = chosen;
-    this.playerColor = chosen === 'w' ? 'b' : 'w';
+    this.playerColor = chosen;
+    this.botColor = chosen === 'w' ? 'b' : 'w';
     try { sessionStorage.setItem('chessEnginePlayerColor', this.playerColor); } catch { /* Private browsing. */ }
     if (this.botExecution === 'server') {
       const epoch = ++this.botEpoch;
@@ -847,6 +957,8 @@ export class GamePageComponent {
     }
     this.botEnabled = true;
     this.botGameActive = true;
+    this.botResigned = false;
+    this.botSidebarTab = 'analysis';
     this.showBotSetup = false;
     this.state.reset();
     this.evalHistory = [];
@@ -860,9 +972,7 @@ export class GamePageComponent {
     if (!this.botMode) {
       return;
     }
-    this.botEngine.stop();
-    this.botEpoch++;
-    this.botThinking = false;
+    this.invalidateBotSession();
     if (this.multiplayer.connected$.value || this.onlineMode) {
       this.disconnectOnlineSession();
     }
@@ -882,6 +992,7 @@ export class GamePageComponent {
     }
     this.botEnabled = true;
     this.botGameActive = true;
+    this.botResigned = false;
     this.showBotSetup = false;
     this.state.reset();
     this.evalHistory = [];
@@ -895,22 +1006,40 @@ export class GamePageComponent {
     if (!this.botMode) {
       return;
     }
-    this.botEngine.stop();
-    this.botThinking = false;
+    this.invalidateBotSession();
+    const epoch = this.botEpoch;
     const previous = this.serverGame;
-    this.botEpoch += 1;
     this.serverGame = null;
     try { sessionStorage.removeItem('chessEngineGameId'); } catch { /* Private browsing. */ }
-    if (this.botExecution === 'server' && previous?.result === 'ONGOING') {
-      try { await this.engineApi.resign(previous.gameId); }
-      catch (error) { this.botError = error instanceof Error ? error.message : 'Could not resign'; }
-    }
     this.botEnabled = false;
     this.botGameActive = false;
     this.showBotSetup = true;
     this.state.reset();
     this.evalHistory = [];
     this.analysis.stop();
+    if (this.botExecution === 'server' && previous?.result === 'ONGOING') {
+      try { await this.engineApi.resign(previous.gameId); }
+      catch (error) {
+        if (epoch === this.botEpoch) this.botError = error instanceof Error ? error.message : 'Could not resign';
+      }
+    }
+  }
+
+  async resignBotGame() {
+    if (!this.botGameActive || this.isGameFinished()) return;
+    this.invalidateBotSession();
+    const epoch = this.botEpoch;
+    if (this.botExecution === 'server' && this.serverGame) {
+      try {
+        const game = await this.engineApi.resign(this.serverGame.gameId);
+        if (epoch === this.botEpoch) this.applyServerBotGame(game);
+      } catch (error) {
+        if (epoch === this.botEpoch) this.botError = error instanceof Error ? error.message : 'Could not resign';
+      }
+    } else {
+      this.botResigned = true;
+      this.state.status$.next(this.t('endResign'));
+    }
   }
 
   connectOnline() {
@@ -1343,18 +1472,62 @@ export class GamePageComponent {
     }
   }
 
-  isBoardLocked() {
+  shouldShowPreGameOverlay() {
     if (this.botMode) {
-      if (this.botExecution === 'server') {
-        return !this.botGameActive || this.botThinking || this.serverGame?.result !== 'ONGOING'
-          || this.state.sideToMove$.value !== this.playerColor;
-      }
-      return !this.botGameActive || this.botThinking;
+      return !this.botGameActive;
     }
     if (this.onlineMode) {
       return !this.multiplayerActive;
     }
     return false;
+  }
+
+  isBotThinking(): boolean {
+    return this.botMode && this.botThinking;
+  }
+
+  isGameFinished(): boolean {
+    if (this.botMode && this.botExecution === 'server') {
+      return this.serverGame?.result !== 'ONGOING';
+    }
+    return this.botResigned || this.state.isGameOver();
+  }
+
+  canHumanMove(): boolean {
+    if (this.shouldShowPreGameOverlay() || this.pendingServerMove) return false;
+    if (this.botMode) {
+      return this.botGameActive && !this.isBotThinking() && !this.isGameFinished()
+        && this.state.sideToMove$.value === this.playerColor;
+    }
+    return true;
+  }
+
+  setBotExecution(execution: 'browser' | 'server') {
+    if (this.botExecution === execution) return;
+    this.invalidateBotSession();
+    this.botExecution = execution;
+    if (execution === 'browser') void this.botEngine.warm(this.botEngineFlavor).catch(error => {
+      if (!this.destroyed) this.botError = error.message;
+    });
+  }
+
+  setBotEngineFlavor(flavor: 'lite' | 'full') {
+    if (this.botEngineFlavor === flavor) return;
+    this.invalidateBotSession();
+    this.botEngineFlavor = flavor;
+    if (this.botExecution === 'browser') void this.botEngine.warm(flavor).catch(error => {
+      if (!this.destroyed) this.botError = error.message;
+    });
+  }
+
+  private invalidateBotSession() {
+    this.botEpoch++;
+    if (this.serverTurnPoll !== null) window.clearTimeout(this.serverTurnPoll);
+    this.serverTurnPoll = null;
+    this.botEngine.stop();
+    this.botThinking = false;
+    this.pendingServerMove = false;
+    this.pendingPromotion = null;
   }
 
   boardLockTitle() {
@@ -1511,16 +1684,13 @@ export class GamePageComponent {
   }
 
   botStrengthLabel() {
-    if (this.botElo <= 600) {
-      return 'Beginner';
-    }
-    if (this.botElo <= 1200) {
-      return 'Club';
-    }
-    if (this.botElo <= 1600) {
-      return 'Advanced';
-    }
-    return 'Master';
+    return this.botMaximum ? 'MAXIMUM' : this.validStrengthTarget() ? strengthCategory(this.botElo) : 'Invalid target';
+  }
+
+  validStrengthTarget() {
+    return Number.isInteger(this.botElo) && this.botElo >= 200 && this.botElo <= 3190
+      && (this.botExecution === 'browser' || this.serverMode !== 'TRAINING' || this.botElo >= 1320)
+      && (this.botExecution === 'browser' || this.serverMode !== 'BEGINNER' || this.botElo <= 1319);
   }
 
   botMoveTimeLabel() {

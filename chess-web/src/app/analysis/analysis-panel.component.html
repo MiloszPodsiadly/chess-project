@@ -41,6 +41,12 @@
       </div>
     </div>
 
+    <svg *ngIf="evalHistory.length > 1" class="evaluation-history" viewBox="0 0 220 60"
+      role="img" aria-label="Evaluation history from White's perspective">
+      <line x1="0" y1="30" x2="220" y2="30" stroke="#526275" stroke-dasharray="3 3" />
+      <polyline [attr.points]="sparklinePoints()" fill="none" stroke="#62d4c5" stroke-width="2" />
+    </svg>
+
     <div class="analysis-lines">
       <div class="line" *ngFor="let line of (analysis.lines$ | async); let i = index" [class.best]="i === 0">
         <span class="move-san">{{ line.move }}</span>

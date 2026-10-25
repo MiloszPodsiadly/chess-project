@@ -15,7 +15,7 @@
   <div class="game-grid">
     <section class="left-panel">
       <div class="info-card board-card">
-        <div class="board-shell" [class.locked]="isBoardLocked()">
+        <div class="board-shell" [class.locked]="shouldShowPreGameOverlay()">
           <app-board
             *ngIf="(state.fen$ | async) as fen"
             [class.online-board]="onlineMode"
@@ -26,7 +26,7 @@
             [orientation]="boardOrientation()"
             (squareClick)="onSquareClick($event)"
           />
-          <div class="board-lock" *ngIf="isBoardLocked()">
+          <div class="board-lock" *ngIf="shouldShowPreGameOverlay()">
             <div class="lock-card">
               <div class="lock-title">{{ boardLockTitle() }}</div>
               <div class="lock-subtitle">{{ boardLockSubtitle() }}</div>
@@ -248,37 +248,59 @@
             </div>
           </div>
           <div class="engine-source">
+            <div class="field-title">{{ t('engineLocation') }}</div>
             <div class="segmented">
-              <button type="button" [class.active]="botExecution === 'server'" (click)="botExecution = 'server'">{{ t('nativeEngine') }}</button>
-              <button type="button" [class.active]="botExecution === 'browser'" (click)="botExecution = 'browser'">{{ t('browserEngine') }}</button>
+              <button type="button" [class.active]="botExecution === 'browser'" (click)="setBotExecution('browser')">{{ t('browserFast') }}</button>
+              <button type="button" [class.active]="botExecution === 'server'" (click)="setBotExecution('server')">{{ t('nativeServer') }}</button>
             </div>
-            <p *ngIf="botExecution === 'browser'">{{ t('guestDescription') }}</p>
+            <p class="field-help">{{ botExecution === 'browser' ? t('browserTradeoff') : t('nativeTradeoff') }}</p>
+            <label *ngIf="botExecution === 'browser'">{{ t('browserFlavor') }}
+              <select [value]="botEngineFlavor" (change)="setBotEngineFlavor($any($event.target).value)">
+                <option value="lite">Stockfish.js 19 Lite · fast default</option>
+                <option value="full">Stockfish.js 19 Full · large initial download</option>
+              </select>
+            </label>
+            <small *ngIf="botExecution === 'browser'">{{ t('firstLoadNote') }}</small>
             <div *ngIf="botExecution === 'server'">
-              <p>{{ t('serverDescription') }}</p>
               <div *ngIf="!engineApi.authenticated" class="bot-login">
-                <input type="text" [(ngModel)]="botUsername" placeholder="Username" autocomplete="username" />
-                <input type="email" [(ngModel)]="botEmail" placeholder="Email (for registration)" autocomplete="email" />
-                <input type="password" [(ngModel)]="botPassword" placeholder="Password" autocomplete="current-password" />
-                <button type="button" class="ghost" (click)="signInForEngine(false)">{{ t('signIn') }}</button>
-                <button type="button" class="ghost" (click)="signInForEngine(true)">{{ t('register') }}</button>
+                <div class="segmented" role="tablist" [attr.aria-label]="t('account')">
+                  <button type="button" role="tab" [attr.aria-selected]="botAuthMode === 'login'" [class.active]="botAuthMode === 'login'" (click)="botAuthMode = 'login'">{{ t('signIn') }}</button>
+                  <button type="button" role="tab" [attr.aria-selected]="botAuthMode === 'register'" [class.active]="botAuthMode === 'register'" (click)="botAuthMode = 'register'">{{ t('register') }}</button>
+                </div>
+                <label>{{ t('accountName') }}<input type="text" [(ngModel)]="botUsername" autocomplete="username" /></label>
+                <label *ngIf="botAuthMode === 'register'">{{ t('email') }}<input type="email" [(ngModel)]="botEmail" autocomplete="email" /></label>
+                <label>{{ t('password') }}<input type="password" [(ngModel)]="botPassword" [attr.autocomplete]="botAuthMode === 'register' ? 'new-password' : 'current-password'" /></label>
+                <button type="button" class="primary" (click)="signInForEngine(botAuthMode === 'register')">{{ botAuthMode === 'register' ? t('register') : t('signIn') }}</button>
               </div>
               <div *ngIf="engineApi.authenticated" class="bot-status ready">{{ t('signedIn') }}</div>
-              <label>{{ t('strengthMode') }}
-                <select [(ngModel)]="serverMode" (ngModelChange)="onServerModeChange()">
-                  <option value="BEGINNER">{{ t('beginnerMode') }}</option>
-                  <option value="TRAINING">{{ t('trainingMode') }}</option>
-                  <option value="FULL_STRENGTH">{{ t('challengeMode') }}</option>
-                </select>
-              </label>
-              <label *ngIf="serverMode === 'FULL_STRENGTH'">{{ t('searchBudget') }}
-                <select [(ngModel)]="serverPreset">
-                  <option value="STRONG">Strong · 3 s</option>
-                  <option value="EXPERT">Expert · 10 s</option>
-                  <option value="ULTIMATE">Ultimate · 30 s</option>
-                  <option value="DEEP_CHALLENGE">Deep challenge · 60 s</option>
-                </select>
-              </label>
             </div>
+          </div>
+          <div class="strength-catalog">
+            <div class="field-title">{{ t('difficulty') }}</div>
+            <p class="field-help">{{ t('difficultyNote') }}</p>
+            <div class="strength-options">
+              <button type="button" *ngFor="let choice of strengthChoices"
+                [class.active]="!botMaximum && botElo >= choice.min && botElo <= choice.max"
+                (click)="selectStrength(choice.target)">
+                <strong>{{ t(choice.key) }}</strong><small>{{ choice.min }}–{{ choice.max }}</small>
+              </button>
+              <button type="button" [class.active]="botMaximum" (click)="selectMaximum()">
+                <strong>{{ t('maximum') }}</strong><small>{{ t('unrestricted') }}</small>
+              </button>
+            </div>
+            <label *ngIf="!botMaximum" class="custom-strength">{{ t('customLevel') }}
+              <input type="range" min="200" max="3190" step="1" [ngModel]="botElo"
+                (ngModelChange)="onCustomStrength(+$event)" [attr.aria-label]="t('customLevel')" />
+              <input type="number" min="200" max="3190" step="1" [ngModel]="botElo"
+                (ngModelChange)="onCustomStrength(+$event)" [attr.aria-label]="t('customLevel')" />
+            </label>
+            <div *ngIf="botMaximum" class="maximum-summary">{{ t('unrestricted') }}</div>
+            <label *ngIf="botMaximum" class="thinking-time">{{ t('searchBudget') }}
+              <select [(ngModel)]="serverPreset">
+                <option value="STRONG">3 s</option><option value="EXPERT">10 s</option>
+                <option value="ULTIMATE">30 s</option><option value="DEEP_CHALLENGE">60 s</option>
+              </select>
+            </label>
           </div>
           <div class="bot-grid">
             <label>
@@ -295,20 +317,8 @@
                 </button>
               </div>
             </label>
-            <label *ngIf="botExecution === 'browser' || serverMode !== 'FULL_STRENGTH'">
-              {{ t('botSkill') }}
-              <div class="slider">
-                <input type="range" [min]="botExecution === 'server' && serverMode === 'TRAINING' ? 1320 : 200"
-                  [max]="botExecution === 'browser' ? 2000 : serverMode === 'TRAINING' ? 3120 : 1200"
-                  step="200" [(ngModel)]="botElo" />
-                <div class="slider-meta">
-                  <span>{{ botElo }} {{ botExecution === 'browser' ? t('localLevel') : serverMode === 'TRAINING' ? 'Stockfish Elo' : t('beginnerMode') }}</span>
-                  <span class="chip">{{ botStrengthLabel() }}</span>
-                </div>
-              </div>
-            </label>
           </div>
-          <div class="bot-profile" *ngIf="botExecution === 'browser'">
+          <div class="bot-profile" *ngIf="botExecution === 'browser' && !botMaximum && validStrengthTarget()">
             <div class="profile-title">{{ t('botProfile') }}</div>
             <div class="profile-grid">
               <div class="profile-card">
@@ -322,7 +332,7 @@
             </div>
           </div>
           <div class="setup-actions">
-            <button class="primary" (click)="startBotGame()" [disabled]="botThinking || (botExecution === 'server' && !engineApi.authenticated)">{{ t('startVsBot') }}</button>
+            <button class="primary" (click)="startBotGame()" [disabled]="botThinking || (!botMaximum && !validStrengthTarget()) || (botExecution === 'server' && !engineApi.authenticated)">{{ t('startVsBot') }}</button>
           </div>
           <div class="error" *ngIf="botError">{{ botError }}</div>
           <div class="bot-status" *ngIf="botThinking">{{ t('botThinking') }}</div>
@@ -334,7 +344,7 @@
         <div class="card-header">
           <div>
             <h2>{{ t('botGameTitle') }}</h2>
-            <div class="card-subtitle">{{ botExecution === 'server' ? t('nativeEngine') + ' · ' + serverMode + (serverMode === 'FULL_STRENGTH' ? ' · ' + serverPreset : '') : t('browserEngine') + ' · ' + t('localLevel') + ' ' + botElo }}</div>
+            <div class="card-subtitle">{{ botExecution === 'server' ? t('nativeEngine') : 'Stockfish.js 19 ' + botEngineFlavor }} · {{ botMaximum ? t('unrestricted') : botElo + ' · ' + botStrengthLabel() }}</div>
           </div>
           <div class="card-meta">
             <span class="chip">{{ t('you') }}: {{ colorLabel(playerColor) }}</span>
@@ -345,13 +355,20 @@
         <div class="bot-actions">
           <button class="primary" *ngIf="!botGameActive" (click)="startBotGame()">{{ t('startVsBot') }}</button>
           <button class="ghost" *ngIf="botGameActive" (click)="restartBotGame()">{{ t('restartGame') }}</button>
+          <button class="ghost" *ngIf="botGameActive && !isGameFinished()" (click)="resignBotGame()">{{ t('resign') }}</button>
           <button class="ghost" (click)="exitToBotSetup()">{{ t('exitGame') }}</button>
           <button class="ghost" *ngIf="botExecution === 'server' && serverGame?.turnState === 'ENGINE_FAILED'" (click)="retryServerBotTurn()">{{ t('engineRetry') }}</button>
         </div>
         <div class="error" *ngIf="botError">{{ botError }}</div>
       </div>
 
-      <div class="info-card history-card" *ngIf="!onlineMode">
+      <div class="bot-sidebar-tabs segmented" *ngIf="botMode && !showBotSetup" role="tablist" [attr.aria-label]="t('botGameTitle')">
+        <button type="button" role="tab" [attr.aria-selected]="botSidebarTab === 'analysis'" [class.active]="botSidebarTab === 'analysis'" (click)="botSidebarTab = 'analysis'">{{ t('analysisTab') }}</button>
+        <button type="button" role="tab" [attr.aria-selected]="botSidebarTab === 'moves'" [class.active]="botSidebarTab === 'moves'" (click)="botSidebarTab = 'moves'">{{ t('movesTab') }}</button>
+        <button type="button" role="tab" [attr.aria-selected]="botSidebarTab === 'settings'" [class.active]="botSidebarTab === 'settings'" (click)="botSidebarTab = 'settings'">{{ t('settingsTab') }}</button>
+      </div>
+
+      <div class="info-card history-card" *ngIf="!onlineMode && (!botMode || botSidebarTab === 'moves')">
         <div class="card-header">
           <div>
             <h2>{{ t('moveHistory') }}</h2>
@@ -368,7 +385,7 @@
         <app-move-history *ngIf="(state.moves$ | async) as moves" [moves]="moves" />
       </div>
 
-      <div class="info-card analysis-card" *ngIf="!onlineMode">
+      <div class="info-card analysis-card" *ngIf="!onlineMode && (!botMode || botSidebarTab === 'analysis')">
         <label *ngIf="botExecution === 'browser'">{{ t('localAnalysisEngine') }}
           <select [value]="analysisFlavor" (change)="setAnalysisFlavor($any($event.target).value)">
             <option value="lite">Stockfish.js 19 Lite (default)</option>
@@ -378,6 +395,16 @@
         <p *ngIf="botExecution === 'browser' && (analysis.status$ | async) === 'loading'">{{ t('engineLoading') }}</p>
         <p *ngIf="botExecution === 'browser' && (analysis.status$ | async) as analysisStatus">{{ analysisStatus !== 'idle' && analysisStatus !== 'ready' && analysisStatus !== 'loading' ? analysisStatus : '' }}</p>
         <app-analysis-panel [evalHistory]="evalHistory" />
+      </div>
+
+      <div class="info-card bot-settings-card" *ngIf="botMode && !showBotSetup && botSidebarTab === 'settings'">
+        <h2>{{ t('settingsTab') }}</h2>
+        <label class="toggle">
+          <span>{{ t('autoAnalysis') }}</span>
+          <input type="checkbox" [(ngModel)]="analysisEnabled" (ngModelChange)="syncAnalysisSetting()" />
+        </label>
+        <p class="field-help">{{ botExecution === 'browser' ? t('browserTradeoff') : t('nativeTradeoff') }}</p>
+        <button type="button" class="ghost" (click)="exitToBotSetup()">{{ t('changeSetup') }}</button>
       </div>
 
       <div class="info-card online-actions-card" *ngIf="multiplayerGameActive()">

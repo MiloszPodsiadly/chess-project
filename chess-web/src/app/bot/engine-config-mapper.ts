@@ -2,6 +2,9 @@ import type { EloProfile } from './elo-profile';
 
 export class EngineConfigMapper {
   static forElo(elo: number): EloProfile {
+    if (!Number.isInteger(elo) || elo < 200 || elo > 3190) {
+      throw new RangeError('Local strength setting must be 200–3190');
+    }
     if (elo <= 200) {
       return { elo: 200, minTimeMs: 20, maxTimeMs: 40, depthCap: 1, topMoves: 999, moveSelection: 'RANDOM_LEGAL', blunderProb: 0.45 };
     }
@@ -29,7 +32,11 @@ export class EngineConfigMapper {
     if (elo <= 1800) {
       return { elo: 1800, minTimeMs: 800, maxTimeMs: 800, depthCap: 15, topMoves: 1, moveSelection: 'BEST', blunderProb: 0.01 };
     }
-    return { elo: 2000, minTimeMs: 1200, maxTimeMs: 1200, depthCap: 18, topMoves: 1, moveSelection: 'BEST', blunderProb: 0.005 };
+    const fraction = (elo - 1800) / (3190 - 1800);
+    const movetime = Math.round(800 + fraction * 2200);
+    return { elo, minTimeMs: movetime, maxTimeMs: movetime,
+      depthCap: Math.round(15 + fraction * 9), topMoves: 1,
+      moveSelection: 'BEST', blunderProb: 0 };
   }
 
   static pickTime(profile: EloProfile) {

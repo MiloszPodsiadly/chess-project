@@ -1,5 +1,8 @@
 .game-shell {
   min-height: 100vh;
+  box-sizing: border-box;
+  width: 100%;
+  overflow-x: clip;
   padding: 22px 24px;
   background:
     radial-gradient(1200px 600px at 10% 10%, rgba(40, 120, 140, 0.35), transparent 60%),
@@ -7,11 +10,6 @@
     #0b1217;
   color: #e6ebf2;
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
-}
-
-.game-shell {
-  transform: scale(0.95);
-  transform-origin: top center;
 }
 
 .game-shell.no-header {
@@ -82,7 +80,10 @@
 .game-grid {
   margin-top: 20px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
   gap: 20px;
   align-items: start;
   min-height: calc(100vh - 120px);
@@ -102,11 +103,14 @@
   display: grid;
   gap: 16px;
   min-height: calc(100vh - 120px);
+  min-width: 0;
 }
 
 .right-panel {
   display: grid;
   gap: 14px;
+  min-width: 0;
+  align-content: start;
 }
 
 .right-panel.online-layout {
@@ -215,7 +219,7 @@
 
 .history-card,
 .analysis-card {
-  min-width: 260px;
+  min-width: 0;
 }
 
 .bot-controls {
@@ -1041,4 +1045,106 @@
   .right-panel {
     grid-template-columns: 1fr;
   }
+}
+
+.field-title {
+  color: #e6ebf2;
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.field-help {
+  color: #aab8c8;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 4px 0 10px;
+}
+
+.strength-catalog,
+.bot-login {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.strength-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.strength-options button {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  border: 1px solid #344958;
+  background: #101d27;
+  color: #e6ebf2;
+  border-radius: 10px;
+  padding: 9px;
+  cursor: pointer;
+}
+
+.strength-options button.active {
+  border-color: #62d4c5;
+  background: #173b41;
+}
+
+.strength-options small { color: #9eacbd; }
+
+.custom-strength,
+.thinking-time {
+  display: grid !important;
+  gap: 8px;
+  min-width: 0;
+}
+
+.custom-strength input[type='range'] { width: 100%; }
+
+.custom-strength input[type='number'],
+.bot-login input,
+.thinking-time select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 11px;
+  color: #f5f7fb;
+  background: #0c141b;
+  border: 1px solid #405366;
+  border-radius: 10px;
+}
+
+.maximum-summary { color: #a7f2ce; font-weight: 700; }
+.bot-sidebar-tabs { min-width: 0; }
+.bot-sidebar-tabs button { min-width: 0; }
+.bot-settings-card { display: grid; gap: 14px; }
+.bot-settings-card h2 { margin: 0; }
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid #ffd166;
+  outline-offset: 2px;
+}
+
+@media (max-width: 1200px) {
+  .strength-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 960px) {
+  .game-shell { padding: 12px; }
+  .game-shell.no-header .left-panel { height: auto; min-height: 0; }
+  .left-panel { min-height: 0; }
+  .game-grid { gap: 12px; min-height: 0; }
+}
+
+@media (max-width: 500px) {
+  .game-shell { padding: 8px; }
+  .board-card { padding: 6px; }
+  .settings-card { padding: 12px; }
+  .strength-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card-header { align-items: flex-start; flex-direction: column; }
+  .segmented button { padding: 8px 5px; }
 }

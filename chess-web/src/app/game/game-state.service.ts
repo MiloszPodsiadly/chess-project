@@ -86,6 +86,10 @@ export class GameStateService {
     return true;
   }
 
+  isGameOver(): boolean {
+    return this.chess.isGameOver();
+  }
+
   private computeStatus() {
     if (this.chess.isCheckmate()) {
       return 'Checkmate';

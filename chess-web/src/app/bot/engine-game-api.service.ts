@@ -16,6 +16,8 @@ export interface ServerEngineGame {
   engineMode?: ServerEngineMode | null;
   enginePreset?: StrengthPreset | null;
   engineElo?: number | null;
+  playerColor: 'WHITE' | 'BLACK';
+  engineExecutionId?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -83,8 +85,8 @@ export class EngineGameApiService {
     if (!response.ok) {
       let message = `Engine request failed (${response.status})`;
       try {
-        const error = await response.json() as { message?: string };
-        message = error.message ?? message;
+        const error = await response.json() as { message?: string; error?: string };
+        message = error.message ?? error.error ?? message;
       } catch { /* HTTP error without a JSON body. */ }
       throw new Error(message);
     }

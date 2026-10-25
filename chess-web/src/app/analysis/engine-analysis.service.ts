@@ -24,6 +24,7 @@ export class EngineAnalysisService {
   readonly status$ = new BehaviorSubject<string>('idle');
 
   readonly evaluation$ = new BehaviorSubject<string>('—');
+  readonly completedEvaluation$ = new BehaviorSubject<{ fen: string; value: string } | null>(null);
   readonly lines$ = new BehaviorSubject<AnalysisLine[]>([]);
   readonly bestMove$ = new BehaviorSubject<string | null>(null);
   readonly bestMoveSan$ = new BehaviorSubject<string | null>(null);
@@ -50,6 +51,9 @@ export class EngineAnalysisService {
     this.linesByPv.clear();
     this.latestDepth = 0;
     this.lines$.next([]);
+    this.evaluation$.next('—');
+    this.bestMove$.next(null);
+    this.bestMoveSan$.next(null);
     this.depth$.next(null);
     this.nodes$.next(null);
     this.nps$.next(null);
@@ -61,6 +65,9 @@ export class EngineAnalysisService {
         if (requestId !== this.requestId) return;
         this.bestMove$.next(move);
         this.bestMoveSan$.next(this.uciToSan(move));
+        if (this.evaluation$.value !== '—') {
+          this.completedEvaluation$.next({ fen, value: this.evaluation$.value });
+        }
         this.status$.next('ready');
       })
       .catch(error => {
@@ -102,7 +109,7 @@ export class EngineAnalysisService {
     }
   }
 
-  applyExternalAnalysis(analysis: EngineMoveResponseDto | null) {
+  applyExternalAnalysis(analysis: EngineMoveResponseDto | null, fen?: string) {
     if (!analysis) {
       return;
     }
@@ -111,6 +118,7 @@ export class EngineAnalysisService {
     const evalValue = analysis.evaluation ? this.formatEval(analysis.evaluation.type,
       analysis.evaluation.value, analysis.evaluation.side) : '—';
     this.evaluation$.next(evalValue);
+    if (fen && evalValue !== '—') this.completedEvaluation$.next({ fen, value: evalValue });
     this.bestMove$.next(this.toUci(analysis.bestMove));
     const topSan = analysis.topLines?.[0]?.san;
     this.bestMoveSan$.next(topSan ?? this.toUci(analysis.bestMove));
@@ -126,7 +134,12 @@ export class EngineAnalysisService {
   }
 
   useLocalAnalysis() {
+    this.stop();
     this.external$.next(false);
+    this.evaluation$.next('—');
+    this.bestMove$.next(null);
+    this.bestMoveSan$.next(null);
+    this.lines$.next([]);
   }
 
   private handleInfo(line: string) {
