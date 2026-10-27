@@ -1,63 +1,100 @@
 <div class="home-shell">
-  <aside class="side-nav">
-    <div class="brand">
-      <div class="logo">P</div>
-      <div>
-        <div class="name">{{ t('name') }}</div>
-        <div class="tagline">{{ t('tagline') }}</div>
-      </div>
-    </div>
+  <aside class="side-nav" [attr.aria-label]="t('primaryNavigation')">
+    <a class="brand" routerLink="/" [attr.aria-label]="t('homeLink')">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" focusable="false" xmlns="http://www.w3.org/2000/svg">
+          <path class="brand-mark__cross" d="M24 5v8m-4-4h8" />
+          <path class="brand-mark__piece" d="M17 18a7 7 0 1 1 14 0c0 3-1 5-3 7l3 9H17l3-9c-2-2-3-4-3-7Z" />
+          <path class="brand-mark__base" d="M15 35h18l3 5H12l3-5Z" />
+          <path class="brand-mark__line" d="M18 29h12" />
+        </svg>
+      </span>
+      <span class="brand-copy">
+        <span class="brand-name">Chess Arena</span>
+        <span class="brand-tagline">{{ t('tagline') }}</span>
+      </span>
+      <svg class="brand-home-mark" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <path d="M4 9.5 10 4l6 5.5v6H4v-6Zm4 6v-4h4v4" />
+      </svg>
+    </a>
 
-    <nav class="menu">
+    <nav class="menu" [attr.aria-label]="t('gameModes')">
+      <p class="menu-heading">{{ t('menuTitle') }}</p>
       <a routerLink="/game" [queryParams]="{ mode: 'bot' }" class="menu-item">
-        <span class="dot"></span>
-        <div>
-          <div class="label">{{ t('playBot') }}</div>
-          <div class="desc">{{ t('botDesc') }}</div>
-        </div>
+        <span class="menu-icon menu-icon--bot" aria-hidden="true">
+          <svg viewBox="0 0 32 32" focusable="false" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 5h8v5h5v4H7v-4h5V5Zm-3 11h14l2 9H7l2-9Zm5 3v3m4-3v3" />
+          </svg>
+        </span>
+        <span class="menu-copy">
+          <span class="menu-label">{{ t('playBot') }}</span>
+          <span class="menu-desc">{{ t('botDesc') }}</span>
+        </span>
+        <svg class="menu-arrow" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+          <path d="M4 10h11m-4-4 4 4-4 4" />
+        </svg>
       </a>
       <a routerLink="/game" [queryParams]="{ mode: 'online' }" class="menu-item">
-        <span class="dot"></span>
-        <div>
-          <div class="label">{{ t('playOnline') }}</div>
-          <div class="desc">{{ t('onlineDesc') }}</div>
-        </div>
+        <span class="menu-icon menu-icon--online" aria-hidden="true">
+          <svg viewBox="0 0 32 32" focusable="false" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="11" cy="10" r="4" />
+            <circle cx="22" cy="12" r="3" />
+            <path d="M4 25c0-5 3-8 7-8s7 3 7 8H4Zm14-7c4-2 9 1 10 6h-7" />
+          </svg>
+        </span>
+        <span class="menu-copy">
+          <span class="menu-label">{{ t('playOnline') }}</span>
+          <span class="menu-desc">{{ t('onlineDesc') }}</span>
+        </span>
+        <svg class="menu-arrow" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+          <path d="M4 10h11m-4-4 4 4-4 4" />
+        </svg>
       </a>
     </nav>
 
     <div class="side-footer">
-      <div class="muted">{{ t('tipsTitle') }}</div>
+      <span class="footer-kicker">{{ t('tipsTitle') }}</span>
+      <p>{{ t('sidebarNote') }}</p>
       <ul>
         <li>{{ t('tip1') }}</li>
         <li>{{ t('tip2') }}</li>
-        <li>{{ t('tip3') }}</li>
       </ul>
     </div>
   </aside>
 
   <main class="hero">
-    <div class="hero-card arena-card">
+    <section class="hero-card arena-card" [attr.aria-label]="t('welcomeSection')">
       <div class="hero-text">
-        <div class="language-toggle">
-          <span>{{ t('langLabel') }}</span>
-          <button type="button" [class.active]="lang === 'en'" (click)="setLang('en')">EN</button>
-          <button type="button" [class.active]="lang === 'pl'" (click)="setLang('pl')">PL</button>
+        <div class="hero-topline">
+          <span class="hero-kicker"><span class="kicker-line"></span>{{ t('heroKicker') }}</span>
+          <div class="language-toggle" role="group" [attr.aria-label]="t('langLabel')">
+            <button type="button" [attr.aria-pressed]="lang === 'en'" [class.active]="lang === 'en'" (click)="setLang('en')">EN</button>
+            <button type="button" [attr.aria-pressed]="lang === 'pl'" [class.active]="lang === 'pl'" (click)="setLang('pl')">PL</button>
+          </div>
         </div>
+
         <h1>{{ t('heroTitle') }}</h1>
-        <p>
-          {{ t('heroCopy') }}
-        </p>
+        <p class="hero-description">{{ t('heroCopy') }}</p>
+
         <div class="hero-actions">
-          <a routerLink="/game" [queryParams]="{ mode: 'bot' }" class="primary arena-button arena-button--primary">{{ t('playBot') }}</a>
-          <a routerLink="/game" [queryParams]="{ mode: 'online' }" class="ghost arena-button arena-button--secondary">{{ t('playOnline') }}</a>
+          <a routerLink="/game" [queryParams]="{ mode: 'bot' }" class="arena-button arena-button--primary">
+            <span>{{ t('playBot') }}</span>
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 10h13m-5-5 5 5-5 5" /></svg>
+          </a>
+          <a routerLink="/game" [queryParams]="{ mode: 'online' }" class="arena-button arena-button--secondary">
+            <span>{{ t('playOnline') }}</span>
+          </a>
         </div>
+
       </div>
-      <div class="hero-board">
-        <div class="mini-board">
-          <div class="square" *ngFor="let square of squares" [class.dark]="square.dark"></div>
-        </div>
+
+      <div class="home-arena" [attr.aria-label]="t('arenaLabel')">
+        @defer (on viewport) {
+          <app-chess-arena-animation variant="HERO" [lang]="lang" />
+        } @placeholder {
+          <div class="arena-placeholder" aria-hidden="true"></div>
+        }
       </div>
-    </div>
+    </section>
   </main>
 </div>
-
