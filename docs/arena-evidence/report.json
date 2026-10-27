@@ -1,0 +1,240 @@
+{
+  "timestamp": "2026-10-27T23:16:22.618Z",
+  "browser": {
+    "protocolVersion": "1.3",
+    "product": "Chrome/156.0.8078.48",
+    "revision": "@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "jsVersion": "15.6.75.19"
+  },
+  "environment": {
+    "cpu": "AMD Ryzen 5 8645HS w/ Radeon 760M Graphics",
+    "logicalCpus": 12,
+    "ramGiB": 31.3,
+    "platform": "win32",
+    "mode": "headless Chrome; mobile uses emulation with 4x CPU slowdown"
+  },
+  "screenshots": [
+    {
+      "name": "home-375x667",
+      "width": 375,
+      "height": 667,
+      "fullPage": true
+    },
+    {
+      "name": "home-390x844",
+      "width": 390,
+      "height": 844,
+      "fullPage": true
+    },
+    {
+      "name": "home-768x1024",
+      "width": 768,
+      "height": 1024,
+      "fullPage": true
+    },
+    {
+      "name": "home-1024x768",
+      "width": 1024,
+      "height": 768,
+      "fullPage": true
+    },
+    {
+      "name": "home-1280x720",
+      "width": 1280,
+      "height": 720,
+      "fullPage": true
+    },
+    {
+      "name": "home-1366x768",
+      "width": 1366,
+      "height": 768,
+      "fullPage": true
+    },
+    {
+      "name": "home-1440x900",
+      "width": 1440,
+      "height": 900,
+      "fullPage": true
+    },
+    {
+      "name": "home-1920x1080",
+      "width": 1920,
+      "height": 1080,
+      "fullPage": true
+    },
+    {
+      "name": "home-polish-1440x900",
+      "width": 1440,
+      "height": 900,
+      "fullPage": true
+    }
+  ],
+  "benchmarks": [
+    {
+      "name": "desktop",
+      "width": 1440,
+      "height": 900,
+      "cpuSlowdown": 1,
+      "state": "LOBBY",
+      "fps": 144.0034627422255,
+      "p95FrameMs": 7.099999999998545,
+      "maxFrameMs": 7.599999999999454,
+      "longTasks": 0,
+      "maxLongTaskMs": 0,
+      "frames": 865
+    },
+    {
+      "name": "desktop-cpu4",
+      "width": 1440,
+      "height": 900,
+      "cpuSlowdown": 4,
+      "state": "LOBBY",
+      "fps": 144.00586012286283,
+      "p95FrameMs": 7.100000000000364,
+      "maxFrameMs": 7.299999999999272,
+      "longTasks": 0,
+      "maxLongTaskMs": 0,
+      "frames": 865
+    },
+    {
+      "name": "mobile-cpu4",
+      "width": 375,
+      "height": 667,
+      "cpuSlowdown": 4,
+      "state": "LOBBY",
+      "fps": 144.00106544140903,
+      "p95FrameMs": 7.099999999998545,
+      "maxFrameMs": 7.700000000000728,
+      "longTasks": 0,
+      "maxLongTaskMs": 0,
+      "frames": 865
+    },
+    {
+      "name": "waiting-cpu4",
+      "width": 1440,
+      "height": 900,
+      "cpuSlowdown": 4,
+      "state": "WAITING_FOR_OPPONENT (CSS fixture)",
+      "fps": 143.67289859656722,
+      "p95FrameMs": 7.099999999998545,
+      "maxFrameMs": 14.399999999997817,
+      "longTasks": 0,
+      "maxLongTaskMs": 0,
+      "frames": 863
+    }
+  ],
+  "checks": {
+    "homeActionsAlignedAtEveryViewport": true,
+    "homeFeatureChipsRemoved": true,
+    "homeUsesChessBrand": true,
+    "homeUsesCinematicScene": true,
+    "homePolishTranslationPersists": true,
+    "homeEnglishTranslationRestores": true,
+    "homePlayBotNavigates": true,
+    "homePlayOnlineNavigates": true,
+    "matchAvailableImmediately": true,
+    "duplicateMatchIgnored": true,
+    "sceneRemovedDuringGameplay": true,
+    "reconnectSkipsIntro": true,
+    "reducedMotionHasNoAnimations": true,
+    "offscreenPauseAndResume": true,
+    "noIntroReplayAfterNavigation": true
+  },
+  "navigationMemory": {
+    "cycles": 20,
+    "before": {
+      "heap": {
+        "usedSize": 4202900,
+        "totalSize": 4980736,
+        "embedderHeapUsedSize": 2724888,
+        "backingStorageSize": 693319
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 769,
+        "jsEventListeners": 15
+      }
+    },
+    "samples": [
+      {
+        "cycles": 1,
+        "heap": {
+          "usedSize": 4264628,
+          "totalSize": 4980736,
+          "embedderHeapUsedSize": 2727688,
+          "backingStorageSize": 693501
+        },
+        "dom": {
+          "documents": 1,
+          "nodes": 769,
+          "jsEventListeners": 15
+        }
+      },
+      {
+        "cycles": 5,
+        "heap": {
+          "usedSize": 4846128,
+          "totalSize": 5242880,
+          "embedderHeapUsedSize": 2806824,
+          "backingStorageSize": 693501
+        },
+        "dom": {
+          "documents": 1,
+          "nodes": 769,
+          "jsEventListeners": 15
+        }
+      },
+      {
+        "cycles": 10,
+        "heap": {
+          "usedSize": 5056744,
+          "totalSize": 5505024,
+          "embedderHeapUsedSize": 2820760,
+          "backingStorageSize": 693501
+        },
+        "dom": {
+          "documents": 1,
+          "nodes": 769,
+          "jsEventListeners": 15
+        }
+      },
+      {
+        "cycles": 20,
+        "heap": {
+          "usedSize": 5163432,
+          "totalSize": 5767168,
+          "embedderHeapUsedSize": 2776456,
+          "backingStorageSize": 693501
+        },
+        "dom": {
+          "documents": 1,
+          "nodes": 769,
+          "jsEventListeners": 15
+        }
+      }
+    ],
+    "after": {
+      "heap": {
+        "usedSize": 5163432,
+        "totalSize": 5767168,
+        "embedderHeapUsedSize": 2683200,
+        "backingStorageSize": 693501
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 769,
+        "jsEventListeners": 15
+      }
+    },
+    "retainedHeapDelta": 960532
+  },
+  "runtimeErrors": [],
+  "sceneChunks": [
+    {
+      "path": "chunk-VWAH5JGY.js",
+      "bytes": 22195,
+      "gzipBytes": 7234
+    }
+  ]
+}

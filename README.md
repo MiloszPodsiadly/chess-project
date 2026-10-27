@@ -4,13 +4,7 @@ Play a quick game, challenge Stockfish 19, or meet another player online. I buil
 
 ## Take a look
 
-![Chess Project screenshot 1](chess-web/public/assets/screens/Screen1.png)
-
-![Chess Project screenshot 2](chess-web/public/assets/screens/Screen2.png)
-
-![Chess Project screenshot 3](chess-web/public/assets/screens/Screen3.png)
-
-![Chess Project screenshot 4](chess-web/public/assets/screens/Screen4.png)
+Screenshots and browser review artifacts: [docs/arena-evidence](docs/arena-evidence/).
 
 ## Play your way
 
