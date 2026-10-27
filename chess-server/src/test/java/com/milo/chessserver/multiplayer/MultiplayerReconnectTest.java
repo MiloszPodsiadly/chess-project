@@ -16,7 +16,6 @@ import com.milo.chessserver.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -45,7 +44,7 @@ class MultiplayerReconnectTest {
         com.milo.chessengine.ChessEngine engine = mock(com.milo.chessengine.ChessEngine.class);
 
         MultiplayerService service = new MultiplayerService(messaging, gameRepository, playerRepository,
-                userRepository, gameService, clocks, new MatchmakingService(new BCryptPasswordEncoder()),
+                userRepository, gameService, clocks, new MatchmakingService(),
                 rooms, sessions, engine, 60_000L, false, 1600, 12, 200L, 3);
         UUID gameId = UUID.randomUUID();
         GameEntity game = new GameEntity();
@@ -73,7 +72,7 @@ class MultiplayerReconnectTest {
 
         when(playerRepository.findByReconnectToken("one-time-token")).thenReturn(Optional.of(player));
         when(gameRepository.findLockedById(gameId)).thenReturn(Optional.of(game));
-        when(playerRepository.findByReconnectTokenForUpdate("one-time-token")).thenReturn(Optional.of(player));
+        when(playerRepository.findForReconnectUpdate(eq("one-time-token"), anyString())).thenReturn(Optional.of(player));
         when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
         when(playerRepository.findByGameIdAndUserId(gameId, 81L)).thenReturn(player);
         when(playerRepository.findByGameId(gameId)).thenReturn(List.of(player));
@@ -91,6 +90,9 @@ class MultiplayerReconnectTest {
                 && "gameStateSync".equals(event.type())));
         assertNotNull(player.getReconnectToken());
         assertFalse("one-time-token".equals(player.getReconnectToken()));
+        assertNotNull(player.getPreviousReconnectTokenHash());
+        assertNotNull(player.getPreviousReconnectTokenExpiresAt());
+        assertNotNull(player.getReconnectAckId());
     }
 
     @Test
@@ -101,7 +103,7 @@ class MultiplayerReconnectTest {
         MoveValidationService moveValidationService = new MoveValidationService();
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         SessionService sessionService = mock(SessionService.class);
-        MatchmakingService matchmakingService = new MatchmakingService(new BCryptPasswordEncoder());
+        MatchmakingService matchmakingService = new MatchmakingService();
         RoomService roomService = mock(RoomService.class);
         com.milo.chessserver.multiplayer.ClockService clockService = new com.milo.chessserver.multiplayer.ClockService();
         com.milo.chessserver.game.GameService gameService = new com.milo.chessserver.game.GameService(

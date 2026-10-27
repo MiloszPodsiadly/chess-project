@@ -14,7 +14,6 @@ import com.milo.chessserver.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.time.Instant;
 import java.util.List;
@@ -32,7 +31,7 @@ class ClockTimeoutTest {
         GamePlayerRepository playerRepository = mock(GamePlayerRepository.class);
         UserRepository userRepository = mock(UserRepository.class);
         GameService gameService = mock(GameService.class);
-        MatchmakingService matchmakingService = new MatchmakingService(new BCryptPasswordEncoder());
+        MatchmakingService matchmakingService = new MatchmakingService();
         SessionService sessionService = mock(SessionService.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         ClockService clockService = new ClockService();

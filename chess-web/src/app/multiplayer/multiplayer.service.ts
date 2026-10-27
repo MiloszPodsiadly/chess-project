@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Client, IMessage, StompSubscription } from '@stomp/stompjs';
+// The server exposes this endpoint with Spring's withSockJS(), which keeps SockJS fallbacks available.
 import SockJS from 'sockjs-client';
 import { BehaviorSubject } from 'rxjs';
 import { Chess, Square } from 'chess.js';
@@ -16,6 +17,8 @@ import {
   RoomHistoryDto,
   RoomMessageDto,
   RoomParticipantsDto,
+  RoomLifecycleEvent,
+  RoomRecoveryCredential,
   RoomParticipantDto,
   HelloAck,
   MultiplayerConnectionState,
@@ -24,12 +27,18 @@ import {
   WsEvent
 } from './models';
 
+type GameUpdateKind = 'MOVE_ACCEPTED' | 'GAME_ENDED' | 'GAME_STATE_SYNC';
+type GameUpdateDecision = 'APPLY' | 'DUPLICATE' | 'STALE' | 'RESYNC';
+const MAX_AUTHORITATIVE_RESYNC_REQUESTS = 3;
+
 @Injectable({ providedIn: 'root' })
 export class MultiplayerService {
   private static readonly MAX_RECONNECT_ATTEMPTS = 8;
+  private static readonly HELLO_ACK_TIMEOUT_MS = 5000;
   private client: Client | null = null;
   private currentGameId: string | null = null;
   private readonly ignoredGameIds = new Set<string>();
+  private readonly handledRoomLifecycleEvents = new Set<string>();
   private roomSubscription: StompSubscription | null = null;
   private roomSubscriptionCode: string | null = null;
   private gameSubscription: StompSubscription | null = null;
@@ -38,10 +47,16 @@ export class MultiplayerService {
   private lobbySubscription: StompSubscription | null = null;
   private connectionUsername: string | null = null;
   private currentReconnectToken: string | null = null;
+  private currentRoomReconnectToken: string | null = this.readSessionValue('roomReconnectToken');
   private reconnectAttempts = 0;
+  private helloAckRetries = 0;
+  private helloAckTimer: ReturnType<typeof setTimeout> | null = null;
+  private awaitingHelloAck = false;
   private matchFoundTimer: ReturnType<typeof setTimeout> | null = null;
   private everConnected = false;
   private awaitingRecoverySnapshot = false;
+  private resyncGameId: string | null = null;
+  private resyncAttempts = 0;
   private manualDisconnect = false;
 
   readonly connected$ = new BehaviorSubject<boolean>(false);
@@ -57,7 +72,7 @@ export class MultiplayerService {
   readonly yourColor$ = new BehaviorSubject<'WHITE' | 'BLACK' | null>(null);
   readonly publicRooms$ = new BehaviorSubject<PublicRoomDto[]>([]);
   readonly drawOffer$ = new BehaviorSubject<boolean>(false);
-  readonly activeRoomCode$ = new BehaviorSubject<string | null>(null);
+  readonly activeRoomCode$ = new BehaviorSubject<string | null>(this.readSessionValue('roomRecoveryRoomCode'));
   readonly roomMessages$ = new BehaviorSubject<RoomMessageDto[]>([]);
   readonly roomInvite$ = new BehaviorSubject<RoomInviteDto | null>(null);
   readonly ready$ = new BehaviorSubject<boolean>(false);
@@ -77,6 +92,7 @@ export class MultiplayerService {
     }
     this.manualDisconnect = false;
     this.reconnectAttempts = 0;
+    this.helloAckRetries = 0;
     this.awaitingRecoverySnapshot = !!this.currentReconnectToken;
     this.connectionState$.next(this.everConnected ? 'RECONNECTING' : 'CONNECTING');
     const wsUrl = this.resolveWsUrl();
@@ -89,17 +105,22 @@ export class MultiplayerService {
         this.connected$.next(true);
         this.ready$.next(false);
         this.connectionState$.next('AUTHENTICATING');
+        this.awaitingHelloAck = true;
         this.subscribeQueue();
         this.subscribeLobby();
+        this.scheduleHelloAckTimeout();
         this.send('hello/auth', {
           username: this.connectionUsername,
-          reconnectToken: this.currentReconnectToken
+          reconnectToken: this.currentReconnectToken,
+          roomReconnectToken: this.currentRoomReconnectToken
         });
       },
       onStompError: () => {
         this.lastError$.next('stomp_error');
       },
       onWebSocketClose: () => {
+        this.clearHelloAckTimeout();
+        this.awaitingHelloAck = false;
         this.connected$.next(false);
         this.ready$.next(false);
         this.sessionUsername$.next(null);
@@ -155,6 +176,9 @@ export class MultiplayerService {
       return;
     }
     const current = this.gameState$.value;
+    if (!current || current.gameId !== gameId || current.result !== 'ONGOING') {
+      return;
+    }
     this.send('makeMove', {
       gameId,
       move,
@@ -256,6 +280,8 @@ export class MultiplayerService {
     this.gameState$.next(null);
     this.yourColor$.next(null);
     this.timeControl$.next(null);
+    this.setRoomReconnectToken(null);
+    this.writeSessionValue('roomRecoveryRoomCode', null);
     this.roomCode$.next(null);
     this.drawOffer$.next(false);
     this.activeRoomCode$.next(null);
@@ -268,6 +294,8 @@ export class MultiplayerService {
 
   disconnect() {
     this.manualDisconnect = true;
+    this.clearHelloAckTimeout();
+    this.awaitingHelloAck = false;
     if (this.client) {
       this.unsubscribeCurrentTopics();
       this.client.deactivate();
@@ -317,10 +345,26 @@ export class MultiplayerService {
           this.setActiveRoom(String(event.payload));
         }
         break;
+      case 'roomOpen': {
+        const lifecycle = event.payload as RoomLifecycleEvent;
+        if (lifecycle?.roomCode) this.setActiveRoom(lifecycle.roomCode);
+        break;
+      }
+      case 'roomRecovery': {
+        const credential = event.payload as RoomRecoveryCredential;
+        if (credential?.roomCode && credential.reconnectToken) {
+          this.setActiveRoom(credential.roomCode);
+          this.setRoomReconnectToken(credential.reconnectToken);
+        }
+        break;
+      }
       case 'roomJoinFailed':
         this.lastError$.next(String(event.payload ?? 'room_join_failed'));
         break;
       case 'helloAck':
+        this.clearHelloAckTimeout();
+        this.awaitingHelloAck = false;
+        this.helloAckRetries = 0;
         if (event.payload && typeof event.payload === 'object') {
           const ack = event.payload as HelloAck;
           if (ack.username) {
@@ -330,6 +374,12 @@ export class MultiplayerService {
           if (ack.reconnectToken) {
             this.currentReconnectToken = ack.reconnectToken;
             this.reconnectToken$.next(ack.reconnectToken);
+          }
+          if (ack.roomReconnectToken) {
+            this.setRoomReconnectToken(ack.roomReconnectToken);
+          }
+          if (ack.reconnectAckId && ack.gameId) {
+            this.send('ackReconnect', { gameId: ack.gameId, ackId: ack.reconnectAckId });
           }
         }
         this.subscribeRoomAfterAuthentication();
@@ -343,6 +393,8 @@ export class MultiplayerService {
         }
         break;
       case 'helloFailed':
+        this.clearHelloAckTimeout();
+        this.awaitingHelloAck = false;
         this.ready$.next(false);
         this.connectionState$.next('ERROR');
         this.lastError$.next(String(event.payload ?? 'hello_failed'));
@@ -386,6 +438,15 @@ export class MultiplayerService {
       case 'roomParticipants': {
         const payload = event.payload as RoomParticipantsDto;
         if (payload && payload.participants && payload.roomCode?.toUpperCase() === this.activeRoomCode$.value) {
+          if (payload.memberEvent === 'ROOM_CLOSED' && payload.roomStatus === 'CLOSED'
+              && payload.closeReason !== 'GAME_FINISHED') {
+            this.handleRoomTerminal('roomClosed', payload);
+            break;
+          }
+          if (payload.memberEvent === 'PARTICIPANT_KICKED') {
+            this.handleRoomTerminal('roomKicked', payload);
+            break;
+          }
           this.roomParticipants$.next(payload.participants);
         }
         break;
@@ -408,11 +469,7 @@ export class MultiplayerService {
       case 'roomKicked':
       case 'roomClosed':
       case 'roomDeleted':
-        if (String(event.payload ?? '').toUpperCase() !== this.activeRoomCode$.value) {
-          break;
-        }
-        this.lastError$.next(event.type);
-        this.leaveGame();
+        this.handleRoomTerminal(event.type, event.payload);
         break;
       case 'gameStarted':
         this.handleGameStarted(event.payload as GameStartedEvent);
@@ -462,7 +519,7 @@ export class MultiplayerService {
     }
     const current = this.gameState$.value;
     if (current?.gameId === event.gameId) {
-      if (event.reconnectToken) {
+      if (!this.currentReconnectToken && event.reconnectToken) {
         this.currentReconnectToken = event.reconnectToken;
         this.reconnectToken$.next(event.reconnectToken);
       }
@@ -472,6 +529,26 @@ export class MultiplayerService {
     if (current?.result === 'ONGOING' && current.gameId !== event.gameId) {
       return;
     }
+    const initialState: GameStateSyncDto = {
+      gameId: event.gameId,
+      fen: event.fen,
+      sideToMove: event.sideToMove,
+      yourColor: event.yourColor ?? null,
+      roomCode: event.roomCode ?? null,
+      timeControlType: event.timeControlType,
+      result: 'ONGOING',
+      endReason: 'NONE',
+      moves: [],
+      whiteTimeLeftMs: event.whiteTimeLeftMs,
+      blackTimeLeftMs: event.blackTimeLeftMs,
+      lastMoveAt: event.lastMoveAt ?? null,
+      version: event.version
+    };
+    if (!this.isValidGameSnapshot(initialState)) {
+      this.requestAuthoritativeSync(event.gameId, 'invalid_game_snapshot');
+      return;
+    }
+
     this.showMatchFound();
     if (this.currentGameId && this.currentGameId !== event.gameId) {
       this.ignoredGameIds.add(this.currentGameId);
@@ -491,27 +568,8 @@ export class MultiplayerService {
     } else {
       this.clearActiveRoom();
     }
-    const initialState: GameStateSyncDto = {
-      gameId: event.gameId,
-      fen: event.fen,
-      sideToMove: event.sideToMove,
-      yourColor: event.yourColor ?? null,
-      roomCode: event.roomCode ?? null,
-      timeControlType: event.timeControlType,
-      result: 'ONGOING',
-      endReason: 'NONE',
-      moves: [],
-      whiteTimeLeftMs: event.whiteTimeLeftMs,
-      blackTimeLeftMs: event.blackTimeLeftMs,
-      lastMoveAt: event.lastMoveAt ?? null,
-      version: event.version ?? null
-    };
-    if (this.isValidGameSnapshot(initialState)) {
-      this.gameState$.next(initialState);
-    } else {
-      this.lastError$.next('invalid_game_snapshot');
-      this.requestSync(event.gameId);
-    }
+    this.gameState$.next(initialState);
+    this.resetAuthoritativeResync(event.gameId);
   }
 
   private showMatchFound() {
@@ -536,15 +594,6 @@ export class MultiplayerService {
     if (!current || current.gameId !== event.gameId) {
       return;
     }
-    if (event.version != null && current.version != null) {
-      if (event.version <= current.version) {
-        return;
-      }
-      if (event.version !== current.version + 1) {
-        this.requestSync(event.gameId);
-        return;
-      }
-    }
     const next: GameStateSyncDto = {
       ...current,
       fen: event.fen,
@@ -554,14 +603,20 @@ export class MultiplayerService {
       lastMoveAt: event.lastMoveAt ?? current.lastMoveAt ?? null,
       moves: [...current.moves, event.move],
       analysis: event.analysis ?? current.analysis ?? null,
-      version: event.version ?? (current.version == null ? null : current.version + 1)
+      version: event.version
     };
-    if (!this.isValidGameSnapshot(next)) {
-      this.requestSync(event.gameId);
+    const decision = this.reconcileGameUpdate(current, next, 'MOVE_ACCEPTED', event);
+    if (decision !== 'APPLY') {
+      if (decision === 'RESYNC') this.requestAuthoritativeSync(event.gameId);
+      return;
+    }
+    if (!this.isValidGameSnapshot(next, true)) {
+      this.requestAuthoritativeSync(event.gameId, 'invalid_game_snapshot');
       return;
     }
     this.drawOffer$.next(false);
     this.gameState$.next(next);
+    this.resetAuthoritativeResync(event.gameId);
   }
 
   private handleMoveRejected(event: MoveRejectedEvent) {
@@ -574,7 +629,7 @@ export class MultiplayerService {
     }
     this.lastError$.next(event.reason);
     if (event.version != null && current.version != null && event.version > current.version) {
-      this.requestSync(event.gameId);
+      this.requestAuthoritativeSync(event.gameId);
       return;
     }
     if (event.fen && event.sideToMove) {
@@ -587,29 +642,39 @@ export class MultiplayerService {
       };
       if (this.isValidGameSnapshot(next)) {
         this.gameState$.next(next);
+        this.resetAuthoritativeResync(event.gameId);
       } else {
-        this.requestSync(event.gameId);
+        this.requestAuthoritativeSync(event.gameId, 'invalid_game_snapshot');
       }
     }
   }
 
   private handleGameStateSync(event: GameStateSyncEvent) {
     const state = event?.state;
-    if (!this.isValidGameSnapshot(state)) {
-      this.lastError$.next('invalid_game_snapshot');
+    if (!state) {
+      this.requestAuthoritativeSync(this.currentGameId ?? this.gameState$.value?.gameId ?? '', 'invalid_game_snapshot');
       return;
     }
     if (this.ignoredGameIds.has(state.gameId)) {
       return;
     }
     const current = this.gameState$.value;
+    let snapshotDecision: GameUpdateDecision = 'APPLY';
     if (current?.result === 'ONGOING' && current.gameId !== state.gameId && !this.awaitingRecoverySnapshot) {
       return;
     }
-    if (current?.gameId === state.gameId
-        && current.version != null
-        && state.version != null
-        && state.version < current.version) {
+    if (current?.gameId === state.gameId) {
+      snapshotDecision = this.reconcileGameUpdate(current, state, 'GAME_STATE_SYNC');
+      if (snapshotDecision === 'RESYNC') {
+        this.requestAuthoritativeSync(state.gameId);
+        return;
+      }
+      if (snapshotDecision === 'STALE') return;
+      if (snapshotDecision === 'DUPLICATE' && !this.awaitingRecoverySnapshot) return;
+    }
+    const incomingGameId = state.gameId;
+    if (!this.isValidGameSnapshot(state)) {
+      this.requestAuthoritativeSync(incomingGameId, 'invalid_game_snapshot');
       return;
     }
     if (this.currentGameId && this.currentGameId !== state.gameId) {
@@ -625,7 +690,14 @@ export class MultiplayerService {
       this.clearActiveRoom();
     }
     this.timeControl$.next(state.timeControlType ?? this.timeControl$.value);
-    this.gameState$.next(state);
+    if (snapshotDecision === 'APPLY') {
+      this.gameState$.next(state);
+    }
+    this.resetAuthoritativeResync(state.gameId);
+    if (this.lastError$.value === 'state_conflict' || this.lastError$.value === 'invalid_game_snapshot'
+        || this.lastError$.value === 'snapshot_recovery_failed') {
+      this.lastError$.next(null);
+    }
     this.opponentDisconnected$.next(false);
     if (this.awaitingRecoverySnapshot) {
       this.awaitingRecoverySnapshot = false;
@@ -639,26 +711,191 @@ export class MultiplayerService {
     if (!current || current.gameId !== event.gameId) {
       return;
     }
-    if (event.version != null && current.version != null && event.version <= current.version) {
-      return;
-    }
     const next: GameStateSyncDto = {
       ...current,
       result: event.result,
       endReason: event.endReason,
-      fen: event.fen ?? current.fen,
-      sideToMove: event.sideToMove ?? current.sideToMove,
-      whiteTimeLeftMs: event.whiteTimeLeftMs ?? current.whiteTimeLeftMs,
-      blackTimeLeftMs: event.blackTimeLeftMs ?? current.blackTimeLeftMs,
-      moves: event.moves ?? current.moves,
-      version: event.version ?? current.version ?? null
+      fen: event.fen,
+      sideToMove: event.sideToMove,
+      whiteTimeLeftMs: event.whiteTimeLeftMs,
+      blackTimeLeftMs: event.blackTimeLeftMs,
+      moves: event.moves,
+      version: event.version
     };
+    const decision = this.reconcileGameUpdate(current, next, 'GAME_ENDED');
+    if (decision !== 'APPLY') {
+      if (decision === 'RESYNC') this.requestAuthoritativeSync(event.gameId);
+      return;
+    }
     if (!this.isValidGameSnapshot(next)) {
-      this.requestSync(event.gameId);
+      this.requestAuthoritativeSync(event.gameId, 'invalid_game_snapshot');
       return;
     }
     this.drawOffer$.next(false);
     this.gameState$.next(next);
+    this.resetAuthoritativeResync(event.gameId);
+  }
+
+  /**
+   * Version orders committed updates; terminality is a separate, irreversible state transition.
+   * The full gameEnded payload and gameStateSync are canonical snapshots, so they may finalize
+   * an ONGOING state at the same version only for a move-terminal reason when position, history,
+   * clocks, and last-move time agree with the committed move event.
+   */
+  private reconcileGameUpdate(
+    current: GameStateSyncDto,
+    incoming: GameStateSyncDto,
+    kind: GameUpdateKind,
+    moveEvent?: MoveAcceptedEvent
+  ): GameUpdateDecision {
+    const currentVersion = current.version ?? null;
+    const incomingVersion = incoming.version ?? null;
+
+    if (currentVersion != null && incomingVersion != null && incomingVersion < currentVersion) {
+      return 'STALE';
+    }
+
+    if (kind === 'MOVE_ACCEPTED') {
+      if (moveEvent?.version == null || (currentVersion != null && incomingVersion == null)) return 'RESYNC';
+      if (currentVersion != null && incomingVersion === currentVersion) {
+        return moveEvent && this.moveEventMatchesCurrent(current, moveEvent) ? 'DUPLICATE' : 'RESYNC';
+      }
+      if (current.result !== 'ONGOING') return 'RESYNC';
+      if (currentVersion != null && incomingVersion != null && incomingVersion !== currentVersion + 1) {
+        return 'RESYNC';
+      }
+      if (currentVersion == null && incomingVersion == null
+          && incoming.moves.length !== current.moves.length + 1) {
+        return 'RESYNC';
+      }
+      return 'APPLY';
+    }
+
+    if (currentVersion != null && incomingVersion == null) return 'RESYNC';
+    if (current.result !== 'ONGOING') {
+      if (incoming.result === 'ONGOING') return 'RESYNC';
+      if (currentVersion === incomingVersion) {
+        return this.sameAuthoritativeSnapshot(current, incoming) ? 'DUPLICATE' : 'RESYNC';
+      }
+      return this.sameTerminalOutcomeAndPosition(current, incoming) ? 'APPLY' : 'RESYNC';
+    }
+
+    if (currentVersion === incomingVersion) {
+      if (this.sameAuthoritativeSnapshot(current, incoming)) return 'DUPLICATE';
+      if (incoming.result !== 'ONGOING' && this.isMoveTerminalReason(incoming.endReason)
+          && this.samePositionAndClocks(current, incoming)) return 'APPLY';
+      return 'RESYNC';
+    }
+
+    return 'APPLY';
+  }
+
+  private moveEventMatchesCurrent(current: GameStateSyncDto, event: MoveAcceptedEvent): boolean {
+    const lastMove = current.moves[current.moves.length - 1];
+    return !!lastMove
+      && this.sameMove(lastMove, event.move)
+      && current.fen === event.fen
+      && current.sideToMove === event.sideToMove
+      && current.whiteTimeLeftMs === event.whiteTimeLeftMs
+      && current.blackTimeLeftMs === event.blackTimeLeftMs
+      && (current.result !== 'ONGOING' || !current.lastMoveAt || !event.lastMoveAt
+        || current.lastMoveAt === event.lastMoveAt);
+  }
+
+  private sameMove(left: MoveAcceptedEvent['move'], right: MoveAcceptedEvent['move']): boolean {
+    return !!left && !!right && left.from === right.from && left.to === right.to
+      && (left.promotion ?? null) === (right.promotion ?? null)
+      && left.playerColor === right.playerColor;
+  }
+
+  private samePositionAndHistory(left: GameStateSyncDto, right: GameStateSyncDto): boolean {
+    return left.gameId === right.gameId
+      && left.fen === right.fen
+      && left.sideToMove === right.sideToMove
+      && left.moves.length === right.moves.length
+      && left.moves.every((move, index) => this.sameMove(move, right.moves[index]));
+  }
+
+  private samePositionAndClocks(left: GameStateSyncDto, right: GameStateSyncDto): boolean {
+    return this.samePositionAndHistory(left, right)
+      && left.whiteTimeLeftMs === right.whiteTimeLeftMs
+      && left.blackTimeLeftMs === right.blackTimeLeftMs
+      && left.lastMoveAt === right.lastMoveAt;
+  }
+
+  private isMoveTerminalReason(reason: GameStateSyncDto['endReason']): boolean {
+    return ['CHECKMATE', 'STALEMATE', 'THREEFOLD_REPETITION', 'FIFTY_MOVE_RULE',
+      'INSUFFICIENT_MATERIAL', 'TIME_OUT'].includes(reason);
+  }
+
+  private sameTerminalOutcomeAndPosition(left: GameStateSyncDto, right: GameStateSyncDto): boolean {
+    return left.result === right.result && left.endReason === right.endReason
+      && this.samePositionAndClocks(left, right);
+  }
+
+  private sameAuthoritativeSnapshot(left: GameStateSyncDto, right: GameStateSyncDto): boolean {
+    return left.version === right.version
+      && left.result === right.result
+      && left.endReason === right.endReason
+      && left.whiteTimeLeftMs === right.whiteTimeLeftMs
+      && left.blackTimeLeftMs === right.blackTimeLeftMs
+      && left.lastMoveAt === right.lastMoveAt
+      && left.timeControlType === right.timeControlType
+      && left.roomCode === right.roomCode
+      && this.samePositionAndHistory(left, right);
+  }
+
+  private requestAuthoritativeSync(gameId: string, reason = 'state_conflict') {
+    if (!gameId) {
+      this.lastError$.next('snapshot_recovery_failed');
+      return;
+    }
+    if (this.resyncGameId !== gameId) {
+      this.resyncGameId = gameId;
+      this.resyncAttempts = 0;
+    }
+    if (this.resyncAttempts >= MAX_AUTHORITATIVE_RESYNC_REQUESTS) {
+      this.lastError$.next('snapshot_recovery_failed');
+      return;
+    }
+    this.resyncAttempts++;
+    this.lastError$.next(reason);
+    this.requestSync(gameId);
+  }
+
+  private resetAuthoritativeResync(gameId: string) {
+    this.resyncGameId = gameId;
+    this.resyncAttempts = 0;
+  }
+
+  private handleRoomTerminal(eventName: 'roomClosed' | 'roomKicked' | 'roomDeleted', payload: unknown) {
+    const details = payload && typeof payload === 'object'
+      ? payload as Partial<RoomLifecycleEvent> & Partial<RoomParticipantsDto>
+      : null;
+    const roomCode = typeof payload === 'string' ? payload : details?.roomCode;
+    const activeRoom = this.activeRoomCode$.value || this.roomCode$.value;
+    if (!roomCode || roomCode.trim().toUpperCase() !== activeRoom?.trim().toUpperCase()) return;
+
+    const lifecycleType = details?.type ?? details?.memberEvent ?? eventName;
+    const lifecycleAt = details?.occurredAt ?? details?.lifecycleAt ?? '';
+    const closeReason = details?.closeReason ?? '';
+    const eventKey = `${roomCode.toUpperCase()}:${lifecycleType}:${lifecycleAt}:${closeReason}`;
+    if (this.handledRoomLifecycleEvents.has(eventKey)) return;
+    this.handledRoomLifecycleEvents.add(eventKey);
+    if (this.handledRoomLifecycleEvents.size > 64) {
+      const oldest = this.handledRoomLifecycleEvents.values().next().value;
+      if (oldest) this.handledRoomLifecycleEvents.delete(oldest);
+    }
+
+    if (eventName === 'roomKicked') {
+      this.lastError$.next('roomKicked');
+    } else if (eventName === 'roomDeleted') {
+      this.lastError$.next('roomDeleted');
+    } else {
+      const reasonKey = closeReason ? String(closeReason).toLowerCase() : '';
+      this.lastError$.next(reasonKey ? `room_closed_${reasonKey}` : 'roomClosed');
+    }
+    this.leaveGame();
   }
 
   private handleRoomMessage(message: RoomMessageDto) {
@@ -673,7 +910,8 @@ export class MultiplayerService {
     if (!this.client || !this.client.connected) {
       return;
     }
-    if (destination !== 'hello/auth' && destination !== 'requestSync' && !this.ready$.value) {
+    if (destination !== 'hello/auth' && destination !== 'requestSync'
+        && destination !== 'ackReconnect' && !this.ready$.value) {
       return;
     }
     this.client.publish({
@@ -705,7 +943,9 @@ export class MultiplayerService {
     if (this.activeRoomCode$.value === normalized) {
       return;
     }
+    this.setRoomReconnectToken(null);
     this.activeRoomCode$.next(normalized);
+    this.writeSessionValue('roomRecoveryRoomCode', normalized);
     this.roomInvite$.next(null);
     this.roomMessages$.next([]);
     this.roomParticipants$.next([]);
@@ -734,6 +974,8 @@ export class MultiplayerService {
 
   private clearActiveRoom() {
     this.unsubscribeRoomTopic();
+    this.setRoomReconnectToken(null);
+    this.writeSessionValue('roomRecoveryRoomCode', null);
     this.activeRoomCode$.next(null);
     this.roomCode$.next(null);
     this.roomMessages$.next([]);
@@ -775,7 +1017,62 @@ export class MultiplayerService {
     this.gameSubscriptionId = null;
   }
 
+  private readSessionValue(key: string): string | null {
+    try {
+      return typeof window === 'undefined' ? null : window.sessionStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  private writeSessionValue(key: string, value: string | null) {
+    try {
+      if (typeof window === 'undefined') return;
+      if (value === null) window.sessionStorage.removeItem(key);
+      else window.sessionStorage.setItem(key, value);
+    } catch {
+      // Storage can be unavailable in private browsing; in-memory recovery still works.
+    }
+  }
+
+  private setRoomReconnectToken(token: string | null) {
+    this.currentRoomReconnectToken = token;
+    this.writeSessionValue('roomReconnectToken', token);
+  }
+
+  private scheduleHelloAckTimeout() {
+    this.clearHelloAckTimeout();
+    this.helloAckTimer = setTimeout(() => {
+      this.helloAckTimer = null;
+      if (!this.awaitingHelloAck || !this.client?.active) return;
+      this.helloAckRetries++;
+      if (this.helloAckRetries >= MultiplayerService.MAX_RECONNECT_ATTEMPTS) {
+        this.awaitingHelloAck = false;
+        this.lastError$.next('reconnect_ack_timeout');
+        this.ready$.next(false);
+        this.manualDisconnect = true;
+        const failedClient = this.client;
+        this.client = null;
+        void failedClient.deactivate().finally(() => {
+          this.manualDisconnect = false;
+          this.connectionState$.next('ERROR');
+          this.connected$.next(false);
+        });
+        return;
+      }
+      this.client.forceDisconnect();
+    }, MultiplayerService.HELLO_ACK_TIMEOUT_MS);
+  }
+
+  private clearHelloAckTimeout() {
+    if (this.helloAckTimer !== null) {
+      clearTimeout(this.helloAckTimer);
+      this.helloAckTimer = null;
+    }
+  }
+
   private stopAfterAuthenticationFailure() {
+    this.clearHelloAckTimeout();
     const failedClient = this.client;
     if (!failedClient) {
       return;
@@ -791,7 +1088,8 @@ export class MultiplayerService {
     });
   }
 
-  private isValidGameSnapshot(state: GameStateSyncDto | null | undefined): state is GameStateSyncDto {
+  private isValidGameSnapshot(state: GameStateSyncDto | null | undefined,
+                              allowPendingMoveTerminal = false): state is GameStateSyncDto {
     if (!state || typeof state.gameId !== 'string' || !state.gameId.trim()
         || typeof state.fen !== 'string' || !Array.isArray(state.moves)
         || !['WHITE', 'BLACK'].includes(state.sideToMove)
@@ -799,11 +1097,15 @@ export class MultiplayerService {
         || !['NONE', 'CHECKMATE', 'STALEMATE', 'RESIGNATION', 'TIME_OUT', 'DISCONNECT_TIMEOUT',
           'AGREED_DRAW', 'THREEFOLD_REPETITION', 'FIFTY_MOVE_RULE', 'INSUFFICIENT_MATERIAL']
           .includes(state.endReason)
+        || (state.result === 'ONGOING') !== (state.endReason === 'NONE')
         || (state.timeControlType != null
           && !['UNTIMED', 'BULLET', 'BLITZ', 'RAPID', 'CLASSICAL'].includes(state.timeControlType))
         || !Number.isFinite(state.whiteTimeLeftMs) || state.whiteTimeLeftMs < 0
         || !Number.isFinite(state.blackTimeLeftMs) || state.blackTimeLeftMs < 0
-        || (state.version != null && (!Number.isInteger(state.version) || state.version < 0))) {
+        || !Number.isSafeInteger(state.version) || state.version < 0
+        || state.moves.length > 10_000
+        || state.version < state.moves.length || state.version > state.moves.length + 1
+        || (state.result === 'ONGOING' && state.version !== state.moves.length)) {
       return false;
     }
 
@@ -822,15 +1124,48 @@ export class MultiplayerService {
           promotion: move.promotion?.toLowerCase() as 'q' | 'r' | 'b' | 'n' | undefined
         });
       }
-      const actualFen = replay.fen().split(' ');
+      const canonicalFen = replay.fen().split(' ');
+      const forcedEnPassantFen = replay.fen({ forceEnpassantSquare: true }).split(' ');
       const expectedFen = state.fen.split(' ');
-      return actualFen.length === 6 && expectedFen.length === 6
+      return canonicalFen.length === 6 && forcedEnPassantFen.length === 6 && expectedFen.length === 6
         && state.sideToMove === (replay.turn() === 'w' ? 'WHITE' : 'BLACK')
-        && [0, 1, 2, 4, 5].every((index) => actualFen[index] === expectedFen[index])
-        && (actualFen[3] === expectedFen[3]
-          || replay.history({ verbose: true }).some((playedMove) => playedMove.flags.includes('e')));
+        && [0, 1, 2, 4, 5].every((index) => canonicalFen[index] === expectedFen[index])
+        && [canonicalFen[3], forcedEnPassantFen[3]].includes(expectedFen[3])
+        && this.isValidSnapshotOutcome(state, replay, allowPendingMoveTerminal);
     } catch {
       return false;
+    }
+  }
+
+  private isValidSnapshotOutcome(state: GameStateSyncDto, replay: Chess,
+                                 allowPendingMoveTerminal: boolean): boolean {
+    if (state.result === 'ONGOING') {
+      return state.endReason === 'NONE'
+        && (!replay.isGameOver() || allowPendingMoveTerminal && state.version === state.moves.length);
+    }
+
+    const noAutomaticResult = !replay.isGameOver();
+    switch (state.endReason) {
+      case 'CHECKMATE':
+        return state.version === state.moves.length && replay.isCheckmate()
+          && state.result === (replay.turn() === 'w' ? 'BLACK_WIN' : 'WHITE_WIN');
+      case 'STALEMATE':
+        return state.version === state.moves.length && replay.isStalemate() && state.result === 'DRAW';
+      case 'INSUFFICIENT_MATERIAL':
+        return state.version === state.moves.length && replay.isInsufficientMaterial() && state.result === 'DRAW';
+      case 'THREEFOLD_REPETITION':
+        return state.version === state.moves.length && replay.isThreefoldRepetition() && state.result === 'DRAW';
+      case 'FIFTY_MOVE_RULE':
+        return state.version === state.moves.length && replay.isDrawByFiftyMoves() && state.result === 'DRAW';
+      case 'AGREED_DRAW':
+        return noAutomaticResult && state.result === 'DRAW';
+      case 'RESIGNATION':
+      case 'TIME_OUT':
+        return noAutomaticResult && state.result !== 'DRAW';
+      case 'DISCONNECT_TIMEOUT':
+        return noAutomaticResult;
+      default:
+        return false;
     }
   }
 }

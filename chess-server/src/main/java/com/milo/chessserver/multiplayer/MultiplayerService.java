@@ -31,6 +31,7 @@ import java.util.*;
 public class MultiplayerService {
 
     private static final String START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private static final java.time.Duration RECONNECT_TOKEN_ACK_GRACE = java.time.Duration.ofMinutes(2);
     private static final Logger log = LoggerFactory.getLogger(MultiplayerService.class);
 
     private final SimpMessagingTemplate messaging;
@@ -103,24 +104,52 @@ public class MultiplayerService {
                 sendEventToUser(sessionKey, new WsEvent("helloFailed", "invalid_reconnect_token"));
                 return;
             }
-            GamePlayerEntity candidate = playerRepository.findByReconnectToken(reconnectToken).orElse(null);
+            String reconnectTokenHash = SecureTokenGenerator.hash(reconnectToken);
+            GamePlayerEntity candidate = playerRepository.findByReconnectToken(reconnectToken)
+                    .orElseGet(() -> playerRepository.findByPreviousReconnectTokenHash(reconnectTokenHash).orElse(null));
             UUID candidateGameId = candidate == null || candidate.getGame() == null
                     ? null : candidate.getGame().getId();
             GameEntity game = candidateGameId == null
                     ? null : gameRepository.findLockedById(candidateGameId).orElse(null);
             GamePlayerEntity player = game == null
-                    ? null : playerRepository.findByReconnectTokenForUpdate(reconnectToken).orElse(null);
+                    ? null : playerRepository.findForReconnectUpdate(reconnectToken, reconnectTokenHash).orElse(null);
             UserEntity user = player == null ? null : player.getUser();
-            if (player == null || !Objects.equals(player.getId(), candidate.getId())
+            Instant now = Instant.now();
+            boolean currentToken = player != null && reconnectToken.equals(player.getReconnectToken());
+            boolean previousToken = player != null
+                    && reconnectTokenHash.equals(player.getPreviousReconnectTokenHash())
+                    && player.getPreviousReconnectTokenExpiresAt() != null
+                    && !player.getPreviousReconnectTokenExpiresAt().isBefore(now)
+                    && player.getReconnectAckId() != null;
+            String currentOwner = user == null ? null : sessionService.getSessionId(user.getId());
+            if (player == null || candidate == null || !Objects.equals(player.getId(), candidate.getId())
+                    || (!currentToken && !previousToken)
                     || user == null || !Objects.equals(player.getGame().getId(), game.getId())
                     || game.getGameType() != GameType.VS_HUMAN) {
                 sendEventToUser(sessionKey, new WsEvent("helloFailed", "invalid_reconnect_token"));
                 return;
             }
+            if (currentOwner != null && !sessionKey.equals(currentOwner)) {
+                return;
+            }
 
-            String rotatedToken = SecureTokenGenerator.generate();
-            player.setReconnectToken(rotatedToken);
-            player.setLastSeenAt(Instant.now());
+            boolean pendingRotation = player.getReconnectAckId() != null
+                    && player.getPreviousReconnectTokenExpiresAt() != null
+                    && !player.getPreviousReconnectTokenExpiresAt().isBefore(now);
+            String rotatedToken;
+            String reconnectAckId;
+            if ((currentToken || previousToken) && pendingRotation) {
+                rotatedToken = player.getReconnectToken();
+                reconnectAckId = player.getReconnectAckId();
+            } else {
+                rotatedToken = SecureTokenGenerator.generate();
+                reconnectAckId = UUID.randomUUID().toString();
+                player.setPreviousReconnectTokenHash(SecureTokenGenerator.hash(player.getReconnectToken()));
+                player.setPreviousReconnectTokenExpiresAt(now.plus(RECONNECT_TOKEN_ACK_GRACE));
+                player.setReconnectAckId(reconnectAckId);
+                player.setReconnectToken(rotatedToken);
+            }
+            player.setLastSeenAt(now);
             playerRepository.save(player);
             UUID gameId = game.getId();
             Long userId = user.getId();
@@ -129,6 +158,8 @@ public class MultiplayerService {
             afterCommit(() -> {
                 sessionService.bindReconnectUser(sessionKey, user);
                 sessionService.attachGame(userId, gameId);
+                sendEventToUser(sessionKey, new WsEvent("helloAck", new HelloAck(
+                        displayName, rotatedToken, userId, null, gameId.toString(), reconnectAckId)));
                 if (ongoingGame) {
                     sendOpponentReconnected(gameId);
                 }
@@ -137,7 +168,23 @@ public class MultiplayerService {
                     sendEventToUser(sessionKey,
                             new WsEvent("opponentDisconnected", new OpponentDisconnectedEvent(gameId)));
                 }
-                sendEventToUser(sessionKey, new WsEvent("helloAck", new HelloAck(displayName, rotatedToken, userId)));
+            });
+            return;
+        }
+
+        if (request.roomReconnectToken() != null && !request.roomReconnectToken().isBlank()) {
+            RoomService.RoomRecoveryResult recovery = roomService.recoverRoomSession(request.roomReconnectToken());
+            if (recovery.user() == null) {
+                sendEventToUser(sessionKey, new WsEvent("helloFailed", "invalid_room_reconnect_token"));
+                return;
+            }
+            UserEntity recoveredUser = recovery.user();
+            String rotatedRoomToken = recovery.recoveryToken();
+            afterCommit(() -> {
+                sessionService.bindReconnectUser(sessionKey, recoveredUser);
+                sendEventToUser(sessionKey, new WsEvent("helloAck", new HelloAck(
+                        recoveredUser.getDisplayName(), null, recoveredUser.getId(), rotatedRoomToken)));
+                sendPublicRooms(sessionKey);
             });
             return;
         }
@@ -145,6 +192,29 @@ public class MultiplayerService {
         UserEntity guest = sessionService.registerGuestSession(sessionKey, request.username());
         sendEventToUser(sessionKey, new WsEvent("helloAck", new HelloAck(guest.getDisplayName(), null, guest.getId())));
         sendPublicRooms(sessionKey);
+    }
+
+    @Transactional
+    public void acknowledgeReconnect(String sessionKey, ReconnectAckRequest request) {
+        UserEntity user = sessionService.getUser(sessionKey);
+        if (user == null || request == null || request.gameId() == null || request.ackId() == null
+                || !sessionService.isCurrentSession(sessionKey, user.getId())) {
+            return;
+        }
+        UUID gameId;
+        try {
+            gameId = UUID.fromString(request.gameId());
+        } catch (IllegalArgumentException exception) {
+            return;
+        }
+        GameEntity game = gameRepository.findLockedById(gameId).orElse(null);
+        if (game == null || game.getGameType() != GameType.VS_HUMAN) return;
+        GamePlayerEntity player = playerRepository.findByGameIdAndUserIdForUpdate(gameId, user.getId());
+        if (player == null || !Objects.equals(player.getReconnectAckId(), request.ackId())) return;
+        player.setPreviousReconnectTokenHash(null);
+        player.setPreviousReconnectTokenExpiresAt(null);
+        player.setReconnectAckId(null);
+        playerRepository.save(player);
     }
 
     private void afterCommit(Runnable action) {
@@ -174,6 +244,115 @@ public class MultiplayerService {
         });
     }
 
+    private void registerPendingQueueEntry(UUID queueReservationId, TimeControlType type) {
+        if (queueReservationId == null) return;
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            MatchmakingService.QueueEntry committed = matchmakingService.commitQueuedEntry(queueReservationId);
+            if (committed != null) {
+                String targetSession = sessionService.getSessionId(committed.userId());
+                if (targetSession != null) {
+                    sendEventToUser(targetSession, new WsEvent("matchmakingQueued", type));
+                }
+            }
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                MatchmakingService.QueueEntry committed = matchmakingService.commitQueuedEntry(queueReservationId);
+                if (committed == null) return;
+                String targetSession = sessionService.getSessionId(committed.userId());
+                if (targetSession != null) {
+                    sendEventToUser(targetSession, new WsEvent("matchmakingQueued", type));
+                }
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    matchmakingService.rollbackQueuedEntry(queueReservationId);
+                }
+            }
+        });
+    }
+
+    private void registerMatchmakingReservation(UUID reservationId) {
+        if (reservationId == null) throw new IllegalStateException("A matchmaking reservation is required");
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            List<MatchmakingService.QueueEntry> restored = matchmakingService.rollbackMatch(
+                    reservationId, this::isEligibleMatchParticipant);
+            notifyMatchmakingQueued(restored);
+            throw new IllegalStateException("Match creation requires an active transaction");
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void beforeCommit(boolean readOnly) {
+                if (!matchmakingService.beginCommit(reservationId, MultiplayerService.this::isEligibleMatchParticipant)) {
+                    throw new IllegalStateException("Matchmaking reservation was canceled or became ineligible");
+                }
+            }
+
+            @Override
+            public void afterCommit() {
+                matchmakingService.completeMatch(reservationId);
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    notifyMatchmakingQueued(matchmakingService.rollbackMatch(
+                            reservationId, MultiplayerService.this::isEligibleMatchParticipant));
+                }
+            }
+        });
+    }
+
+    private void notifyMatchmakingQueued(List<MatchmakingService.QueueEntry> restored) {
+        for (MatchmakingService.QueueEntry entry : restored) {
+            String targetSession = sessionService.getSessionId(entry.userId());
+            if (targetSession != null) {
+                sendEventToUser(targetSession, new WsEvent("matchmakingQueued", entry.timeControlType()));
+            }
+        }
+    }
+
+    private void publishRoomLifecycleChange(RoomService.RoomLifecycleChange change) {
+        if (change == null) return;
+        if (change.type() == RoomLifecycleEventType.ROOM_CLOSED) {
+            RoomLifecycleEvent event = toRoomLifecycleEvent(change);
+            for (Long userId : change.recipientUserIds()) {
+                String targetSession = sessionService.getSessionId(userId);
+                if (targetSession != null) {
+                    messaging.convertAndSendToUser(targetSession, "/queue/game", new WsEvent("roomClosed", event));
+                }
+            }
+            return;
+        }
+        publishRoomMemberChange(change);
+    }
+
+    private void publishRoomMemberChange(RoomService.RoomLifecycleChange change) {
+        if (change == null || change.recipientUserIds().isEmpty()) return;
+        String eventType = switch (change.type()) {
+            case PARTICIPANT_LEFT -> "participantLeft";
+            case PARTICIPANT_KICKED -> "participantKicked";
+            case ROOM_OPEN -> "roomOpen";
+            case ROOM_CLOSED -> "roomClosed";
+        };
+        messaging.convertAndSend("/topic/room/" + change.roomCode(),
+                new WsEvent(eventType, toRoomLifecycleEvent(change)));
+        RoomParticipantsDto participants = roomService.roomParticipantsForBroadcast(change.roomCode());
+        if (participants != null) {
+            messaging.convertAndSend("/topic/room/" + change.roomCode(),
+                    new WsEvent("roomParticipants", participants));
+        }
+    }
+
+    private RoomLifecycleEvent toRoomLifecycleEvent(RoomService.RoomLifecycleChange change) {
+        return new RoomLifecycleEvent(change.roomCode(), change.type(), change.roomStatus(),
+                change.closeReason(), change.participantUserId(), change.occurredAt());
+    }
+
     public String createRoom(String sessionKey, CreateRoomRequest request) {
         UserEntity host = sessionService.getUser(sessionKey);
         if (host == null) {
@@ -199,6 +378,10 @@ public class MultiplayerService {
         if (participants != null) {
             sendEventToUser(sessionKey, new WsEvent("roomParticipants", participants));
         }
+        sendEventToUser(sessionKey, new WsEvent("roomOpen", new RoomLifecycleEvent(
+                result.room().getRoomCode(), RoomLifecycleEventType.ROOM_OPEN, RoomStatus.OPEN,
+                null, null, result.room().getCreatedAt())));
+        sendRoomRecoveryCredential(sessionKey, result.room().getRoomCode(), result.recoveryToken());
         broadcastPublicRooms();
         return result.room() != null ? result.room().getRoomCode() : null;
     }
@@ -221,10 +404,13 @@ public class MultiplayerService {
             return;
         }
         RoomParticipantsDto participants = roomService.roomParticipants(guest, join.room().getRoomCode());
-        if (participants != null) {
-            messaging.convertAndSend("/topic/room/" + participants.roomCode(), new WsEvent("roomParticipants", participants));
-        }
-        broadcastPublicRooms();
+        afterCommit(() -> {
+            sendRoomRecoveryCredential(sessionKey, join.room().getRoomCode(), join.recoveryToken());
+            if (participants != null) {
+                messaging.convertAndSend("/topic/room/" + participants.roomCode(), new WsEvent("roomParticipants", participants));
+            }
+            broadcastPublicRooms();
+        });
     }
 
     @Transactional
@@ -244,26 +430,26 @@ public class MultiplayerService {
         }
         TimeControlType type = request.timeControlType() == null ? TimeControlType.RAPID : request.timeControlType();
         MatchmakingService.QueueEntry entry = new MatchmakingService.QueueEntry(user.getId(), type, Instant.now());
-        MatchmakingService.QueueResult result = matchmakingService.enqueueOrMatch(entry, candidate -> {
-            UserEntity opponentUser = userRepository.findById(candidate.userId()).orElse(null);
-            return opponentUser != null
-                    && sessionService.getSessionId(candidate.userId()) != null
-                    && !hasActiveGame(opponentUser);
-        });
+        MatchmakingService.QueueResult result = matchmakingService.enqueueOrMatch(
+                entry, this::isEligibleMatchParticipant);
         if (result.alreadyQueued()) {
+            if (result.matching() || result.queuePending()) {
+                return;
+            }
             if (result.queuedEntry().timeControlType() == type) {
-                sendEventToUser(sessionKey, new WsEvent("matchmakingQueued", type));
+                afterCommit(() -> sendEventToUser(sessionKey, new WsEvent("matchmakingQueued", type)));
             } else {
-                sendEventToUser(sessionKey, new WsEvent("matchmakingFailed", "already_queued"));
+                afterCommit(() -> sendEventToUser(sessionKey, new WsEvent("matchmakingFailed", "already_queued")));
             }
             return;
         }
         if (result.matchedEntry() == null) {
-            sendEventToUser(sessionKey, new WsEvent("matchmakingQueued", type));
+            registerPendingQueueEntry(result.queueReservationId(), type);
             return;
         }
 
         MatchmakingService.QueueEntry opponent = result.matchedEntry();
+        registerMatchmakingReservation(result.reservationId());
         createAndStartGame(type, opponent.userId(), user.getId(), null);
     }
 
@@ -274,8 +460,12 @@ public class MultiplayerService {
             sendEventToUser(sessionKey, new WsEvent("matchmakingFailed", "not_authenticated"));
             return;
         }
-        matchmakingService.cancel(user.getId());
-        sendEventToUser(sessionKey, new WsEvent("matchmakingCanceled", ""));
+        MatchmakingService.CancelResult result = matchmakingService.cancel(user.getId());
+        if (result == MatchmakingService.CancelResult.MATCH_COMMITTING) {
+            afterCommit(() -> sendEventToUser(sessionKey, new WsEvent("matchmakingFailed", "match_in_progress")));
+            return;
+        }
+        afterCommit(() -> sendEventToUser(sessionKey, new WsEvent("matchmakingCanceled", "")));
     }
 
     @Transactional
@@ -589,12 +779,11 @@ public class MultiplayerService {
             reject(sessionKey, user == null ? "not_authenticated" : "malformed_request");
             return;
         }
-        roomService.leaveRoom(user, request.roomCode());
-        RoomParticipantsDto participants = roomService.roomParticipantsForBroadcast(request.roomCode());
-        if (participants != null) {
-            messaging.convertAndSend("/topic/room/" + participants.roomCode(), new WsEvent("roomParticipants", participants));
+        RoomService.RoomLifecycleChange change = roomService.leaveRoom(user, request.roomCode());
+        if (change != null) {
+            afterCommit(() -> publishRoomLifecycleChange(change));
         }
-        broadcastPublicRooms();
+        afterCommit(this::broadcastPublicRooms);
     }
 
     public void roomParticipants(String sessionKey, RoomParticipantsRequest request) {
@@ -622,17 +811,16 @@ public class MultiplayerService {
             sendEventToUser(sessionKey, new WsEvent("roomKickFailed", result.error()));
             return;
         }
-        RoomParticipantsDto participants = roomService.roomParticipants(user, request.roomCode());
-        if (participants != null) {
-            messaging.convertAndSend("/topic/room/" + participants.roomCode(), new WsEvent("roomParticipants", participants));
-        }
+        RoomService.RoomLifecycleChange change = result.lifecycleChange();
         if (result.user() != null) {
             String targetSession = sessionService.getSessionId(result.user().getId());
             if (targetSession != null) {
-                messaging.convertAndSendToUser(targetSession, "/queue/game", new WsEvent("roomKicked", request.roomCode()));
+                messaging.convertAndSendToUser(targetSession, "/queue/game",
+                        new WsEvent("roomKicked", toRoomLifecycleEvent(change)));
             }
         }
-        broadcastPublicRooms();
+        afterCommit(() -> publishRoomMemberChange(change));
+        afterCommit(this::broadcastPublicRooms);
     }
 
     public void deleteRoom(String sessionKey, DeleteRoomRequest request) {
@@ -641,14 +829,23 @@ public class MultiplayerService {
             reject(sessionKey, user == null ? "not_authenticated" : "malformed_request");
             return;
         }
-        boolean deleted = roomService.deleteRoom(user, request.roomCode());
-        if (!deleted) {
+        RoomService.RoomLifecycleChange change = roomService.deleteRoom(user, request.roomCode());
+        if (change == null) {
             sendEventToUser(sessionKey, new WsEvent("roomDeleteFailed", "delete_failed"));
             return;
         }
-        messaging.convertAndSend("/topic/room/" + request.roomCode(), new WsEvent("roomClosed", request.roomCode()));
-        sendEventToUser(sessionKey, new WsEvent("roomDeleted", request.roomCode()));
+        afterCommit(() -> publishRoomLifecycleChange(change));
         broadcastPublicRooms();
+    }
+
+    @Transactional
+    public void cleanupOldRooms(java.time.Duration maxAge) {
+        List<RoomService.RoomLifecycleChange> changes = roomService.cleanupOldRooms(maxAge);
+        if (changes.isEmpty()) return;
+        afterCommit(() -> {
+            changes.forEach(this::publishRoomLifecycleChange);
+            broadcastPublicRooms();
+        });
     }
 
     @Transactional
@@ -682,6 +879,7 @@ public class MultiplayerService {
             return;
         }
         RoomEntity room = join.room();
+        sendRoomRecoveryCredential(sessionKey, room.getRoomCode(), join.recoveryToken());
         if (room.getGameId() != null) {
             sendSyncToUser(user.getId(), room.getGameId());
         }
@@ -696,7 +894,7 @@ public class MultiplayerService {
         }
         matchmakingService.cancel(user.getId());
         clearDrawOffersForUser(user.getId());
-        List<String> updatedRooms = roomService.handleDisconnect(user);
+        List<RoomService.RoomLifecycleChange> roomChanges = roomService.handleDisconnect(user);
         UUID gameId = sessionService.getActiveGame(user.getId());
         if (gameId != null) {
             GameEntity game = gameRepository.findLockedById(gameId).orElse(null);
@@ -717,13 +915,13 @@ public class MultiplayerService {
         sessionService.clearSession(sessionKey);
         afterCommit(() -> {
             broadcastPublicRooms();
-            for (String roomCode : updatedRooms) {
-                RoomParticipantsDto participants = roomService.roomParticipantsForBroadcast(roomCode);
-                if (participants != null) {
-                    messaging.convertAndSend("/topic/room/" + participants.roomCode(),
-                            new WsEvent("roomParticipants", participants));
+            roomChanges.forEach(change -> {
+                if (change.type() == RoomLifecycleEventType.ROOM_CLOSED) {
+                    publishRoomLifecycleChange(change);
+                } else {
+                    publishRoomMemberChange(change);
                 }
-            }
+            });
         });
     }
 
@@ -1098,6 +1296,11 @@ public class MultiplayerService {
         messaging.convertAndSendToUser(sessionKey, "/queue/game", event);
     }
 
+    private void sendRoomRecoveryCredential(String sessionKey, String roomCode, String token) {
+        if (sessionKey == null || roomCode == null || token == null) return;
+        sendEventToUser(sessionKey, new WsEvent("roomRecovery", new RoomRecoveryCredential(roomCode, token)));
+    }
+
     public void sendPublicRooms(String sessionKey) {
         List<com.milo.chessdomain.multiplayer.PublicRoomDto> rooms = roomService.listPublicRooms();
         sendEventToUser(sessionKey, new WsEvent("publicRooms", rooms));
@@ -1138,6 +1341,20 @@ public class MultiplayerService {
             return false;
         }
         return true;
+    }
+
+    private boolean isEligibleMatchParticipant(MatchmakingService.QueueEntry entry) {
+        if (entry == null || entry.userId() == null || sessionService.getSessionId(entry.userId()) == null) {
+            return false;
+        }
+        try {
+            UserEntity candidate = userRepository.findById(entry.userId()).orElse(null);
+            return candidate != null && !hasActiveGame(candidate);
+        } catch (RuntimeException unavailable) {
+            // Keep a connected player recoverable during a transient database outage.
+            // Any known active-game attachment still excludes the player.
+            return sessionService.getActiveGame(entry.userId()) == null;
+        }
     }
 
     private boolean canAccessGame(Long userId, UUID gameId) {

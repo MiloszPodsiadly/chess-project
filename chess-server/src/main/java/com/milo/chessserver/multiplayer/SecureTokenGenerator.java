@@ -1,7 +1,11 @@
 package com.milo.chessserver.multiplayer;
 
 import java.security.SecureRandom;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.HexFormat;
 
 final class SecureTokenGenerator {
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -16,5 +20,14 @@ final class SecureTokenGenerator {
 
     static String guestUsername() {
         return "g" + generate().substring(0, 31);
+    }
+
+    static String hash(String token) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 }

@@ -26,6 +26,12 @@ public class MultiplayerWsController {
         multiplayerService.handleHello(sessionKey(principal), request);
     }
 
+    @MessageMapping("ackReconnect")
+    public void acknowledgeReconnect(Principal principal,
+                                    @Payload ReconnectAckRequest request) {
+        multiplayerService.acknowledgeReconnect(sessionKey(principal), request);
+    }
+
     @MessageMapping("createRoom")
     public void createRoom(Principal principal,
                            @Payload CreateRoomRequest request) {

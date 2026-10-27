@@ -13,12 +13,16 @@ import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.ExecutorSubscribableChannel;
 
 import java.security.Principal;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
 class WebSocketSubscriptionInterceptorTest {
@@ -62,5 +66,51 @@ class WebSocketSubscriptionInterceptorTest {
         Message<byte[]> event = MessageBuilder.createMessage(new byte[0], outbound.getMessageHeaders());
 
         assertSame(event, interceptor.preSend(event, mock(MessageChannel.class)));
+    }
+
+    @Test
+    void formerRoomMemberCannotReceiveTopicClosureButReceivesPrivateQueueClosure() {
+        SessionService sessions = mock(SessionService.class);
+        RoomService rooms = mock(RoomService.class);
+        UserEntity user = mock(UserEntity.class);
+        when(user.getId()).thenReturn(42L);
+        when(sessions.getUser("room-user")).thenReturn(user);
+        when(rooms.isActiveRoomParticipant(42L, "SECRET")).thenReturn(false);
+        WebSocketSubscriptionInterceptor interceptor = new WebSocketSubscriptionInterceptor(
+                sessions, mock(GamePlayerRepository.class), rooms);
+        String sessionId = "former-session";
+
+        StompHeaderAccessor connect = StompHeaderAccessor.create(StompCommand.CONNECT);
+        connect.setSessionId(sessionId);
+        connect.setUser((Principal) () -> "room-user");
+        connect.setLeaveMutable(true);
+        interceptor.preSend(MessageBuilder.createMessage(new byte[0], connect.getMessageHeaders()),
+                mock(MessageChannel.class));
+
+        ExecutorSubscribableChannel outbound = new ExecutorSubscribableChannel();
+        outbound.addInterceptor(interceptor);
+        java.util.List<Message<?>> delivered = new java.util.ArrayList<>();
+        outbound.subscribe(delivered::add);
+
+        SimpMessageHeaderAccessor topicHeaders = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+        topicHeaders.setSessionId(sessionId);
+        topicHeaders.setDestination("/topic/room/SECRET");
+        topicHeaders.setLeaveMutable(true);
+        Message<byte[]> topicEvent = MessageBuilder.createMessage(new byte[0], topicHeaders.getMessageHeaders());
+        assertFalse(outbound.send(topicEvent));
+        assertTrue(delivered.isEmpty());
+
+        SimpMessageHeaderAccessor queueHeaders = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+        queueHeaders.setSessionId(sessionId);
+        queueHeaders.setDestination("/queue/game-user" + sessionId);
+        queueHeaders.setLeaveMutable(true);
+        Message<byte[]> privateEvent = MessageBuilder.createMessage(new byte[0], queueHeaders.getMessageHeaders());
+
+        assertTrue(outbound.send(privateEvent));
+        assertEquals(1, delivered.size());
+        assertSame(privateEvent, delivered.get(0));
+        assertEquals("/queue/game-user" + sessionId,
+                SimpMessageHeaderAccessor.getDestination(delivered.get(0).getHeaders()));
+        verify(rooms).isActiveRoomParticipant(42L, "SECRET");
     }
 }

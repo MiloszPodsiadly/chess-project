@@ -9,6 +9,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Session ownership is process-local. Durable reconnect credentials survive a restart,
+ * but active-session coordination currently assumes a single server node.
+ */
 @Service
 public class SessionService {
 

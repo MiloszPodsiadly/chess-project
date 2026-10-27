@@ -8,6 +8,7 @@ import com.milo.chessdomain.TimeControlType;
 import com.milo.chessdomain.multiplayer.AcceptDrawRequest;
 import com.milo.chessdomain.multiplayer.HelloAck;
 import com.milo.chessdomain.multiplayer.HelloAuthRequest;
+import com.milo.chessdomain.multiplayer.ReconnectAckRequest;
 import com.milo.chessdomain.multiplayer.MakeMoveRequest;
 import com.milo.chessdomain.multiplayer.ResignRequest;
 import com.milo.chessserver.multiplayer.WsEvent;
@@ -22,14 +23,13 @@ import com.milo.chessserver.user.UserRepository;
 import com.milo.chessengine.ChessEngine;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -109,33 +109,77 @@ class MultiplayerServiceSecurityTest {
     }
 
     @Test
-    void validReconnectRotatesTokenAndOldTokenCannotBeReplayed() {
+    void lostHelloAckCanRetryWithOldTokenButAcknowledgedTokenCannotBeReplayed() {
         Fixture fixture = fixture();
-        when(fixture.sessions.getUser(SESSION)).thenReturn(null);
         GamePlayerEntity player = new GamePlayerEntity();
         player.setGame(fixture.game);
         player.setUser(fixture.user);
         player.setColor(Color.WHITE);
         player.setReconnectToken("old-token");
-        when(fixture.players.findByReconnectToken("old-token")).thenReturn(Optional.of(player));
-        AtomicInteger tokenLookups = new AtomicInteger();
-        when(fixture.players.findByReconnectTokenForUpdate(anyString())).thenAnswer(invocation ->
-                tokenLookups.getAndIncrement() == 0 ? Optional.of(player) : Optional.empty());
+        AtomicReference<String> currentOwner = new AtomicReference<>();
+        when(fixture.sessions.getUser(anyString())).thenAnswer(invocation ->
+                invocation.getArgument(0).equals(currentOwner.get()) ? fixture.user : null);
+        when(fixture.sessions.getSessionId(fixture.user.getId())).thenAnswer(invocation -> currentOwner.get());
+        when(fixture.sessions.isCurrentSession(anyString(), eq(fixture.user.getId())))
+                .thenAnswer(invocation -> invocation.getArgument(0).equals(currentOwner.get()));
+        doAnswer(invocation -> {
+            currentOwner.set(invocation.getArgument(0));
+            return null;
+        }).when(fixture.sessions).bindReconnectUser(anyString(), any(UserEntity.class));
+        doAnswer(invocation -> {
+            currentOwner.compareAndSet(invocation.getArgument(0), null);
+            return null;
+        }).when(fixture.sessions).clearSession(anyString());
+        when(fixture.players.findByReconnectToken(anyString())).thenAnswer(invocation ->
+                invocation.getArgument(0).equals(player.getReconnectToken()) ? Optional.of(player) : Optional.empty());
+        when(fixture.players.findByPreviousReconnectTokenHash(anyString())).thenAnswer(invocation ->
+                invocation.getArgument(0).equals(player.getPreviousReconnectTokenHash())
+                        ? Optional.of(player) : Optional.empty());
+        when(fixture.players.findForReconnectUpdate(anyString(), anyString())).thenAnswer(invocation -> {
+            String rawToken = invocation.getArgument(0);
+            String previousHash = invocation.getArgument(1);
+            return rawToken.equals(player.getReconnectToken())
+                    || previousHash.equals(player.getPreviousReconnectTokenHash())
+                    ? Optional.of(player) : Optional.empty();
+        });
         when(fixture.players.findByGameIdAndUserId(fixture.game.getId(), fixture.user.getId())).thenReturn(player);
+        when(fixture.players.findByGameIdAndUserIdForUpdate(fixture.game.getId(), fixture.user.getId())).thenReturn(player);
+        when(fixture.players.findByGameId(fixture.game.getId())).thenReturn(List.of(player));
         when(fixture.gameService.loadMoves(fixture.game.getId())).thenReturn(List.of());
-        when(fixture.sessions.getSessionId(fixture.user.getId())).thenReturn(SESSION);
 
         fixture.service.handleHello(SESSION, new HelloAuthRequest("ignored-name", "old-token"));
         String rotatedToken = player.getReconnectToken();
+        String ackId = player.getReconnectAckId();
         assertNotEquals("old-token", rotatedToken);
         assertEquals(43, rotatedToken.length());
+        assertNotNull(ackId);
         verify(fixture.sessions).bindReconnectUser(SESSION, fixture.user);
         assertTrue(userEvents(fixture.messaging).stream().anyMatch(event ->
                 event.type().equals("helloAck")
-                        && ((HelloAck) event.payload()).reconnectToken().equals(rotatedToken)));
+                        && ((HelloAck) event.payload()).reconnectToken().equals(rotatedToken)
+                        && ((HelloAck) event.payload()).reconnectAckId().equals(ackId)));
+
+        fixture.sessions.clearSession(SESSION);
+        fixture.service.handleHello("retry-session", new HelloAuthRequest("ignored-name", "old-token"));
+        assertEquals(rotatedToken, player.getReconnectToken());
+        assertEquals(ackId, player.getReconnectAckId());
+        verify(fixture.sessions).bindReconnectUser("retry-session", fixture.user);
 
         fixture.service.handleHello("replay-socket", new HelloAuthRequest("alice", "old-token"));
-        verify(fixture.sessions, times(1)).bindReconnectUser(anyString(), any(UserEntity.class));
+        verify(fixture.sessions, times(2)).bindReconnectUser(anyString(), any(UserEntity.class));
+        assertTrue(userEvents(fixture.messaging).stream().filter(event -> event.type().equals("helloAck"))
+                .map(event -> (HelloAck) event.payload())
+                .filter(ack -> ack.reconnectToken().equals(rotatedToken))
+                .allMatch(ack -> ack.reconnectAckId().equals(ackId)));
+
+        fixture.service.acknowledgeReconnect("retry-session",
+                new ReconnectAckRequest(fixture.game.getId().toString(), ackId));
+        assertNull(player.getPreviousReconnectTokenHash());
+        assertNull(player.getPreviousReconnectTokenExpiresAt());
+        assertNull(player.getReconnectAckId());
+
+        fixture.service.handleHello("replay-socket", new HelloAuthRequest("alice", "old-token"));
+        verify(fixture.sessions, times(2)).bindReconnectUser(anyString(), any(UserEntity.class));
         verify(fixture.sessions, never()).registerGuestSession(anyString(), anyString());
         assertTrue(userEvents(fixture.messaging).stream().anyMatch(event ->
                 event.type().equals("helloFailed") && event.payload().equals("invalid_reconnect_token")));
@@ -145,13 +189,35 @@ class MultiplayerServiceSecurityTest {
     void invalidReconnectTokenCannotFallBackToANameBasedGuestIdentity() {
         Fixture fixture = fixture();
         when(fixture.sessions.getUser(SESSION)).thenReturn(null);
-        when(fixture.players.findByReconnectTokenForUpdate("invalid")).thenReturn(Optional.empty());
-
         fixture.service.handleHello(SESSION, new HelloAuthRequest("registered-name", "invalid"));
 
         verify(fixture.sessions, never()).registerGuestSession(anyString(), anyString());
         verify(fixture.sessions, never()).bindReconnectUser(anyString(), any(UserEntity.class));
         assertEquals("helloFailed", lastUserEvent(fixture.messaging).type());
+    }
+
+    @Test
+    void expiredPreviousReconnectTokenIsRejected() {
+        Fixture fixture = fixture();
+        GamePlayerEntity player = new GamePlayerEntity();
+        player.setGame(fixture.game);
+        player.setUser(fixture.user);
+        player.setColor(Color.WHITE);
+        player.setReconnectToken("current-token");
+        player.setPreviousReconnectTokenHash(SecureTokenGenerator.hash("expired-token"));
+        player.setPreviousReconnectTokenExpiresAt(Instant.now().minusSeconds(1));
+        player.setReconnectAckId(UUID.randomUUID().toString());
+        when(fixture.players.findByPreviousReconnectTokenHash(player.getPreviousReconnectTokenHash()))
+                .thenReturn(Optional.of(player));
+        when(fixture.players.findForReconnectUpdate("expired-token", player.getPreviousReconnectTokenHash()))
+                .thenReturn(Optional.of(player));
+
+        fixture.service.handleHello("expired-session", new HelloAuthRequest("alice", "expired-token"));
+
+        verify(fixture.sessions, never()).bindReconnectUser(anyString(), any(UserEntity.class));
+        verify(fixture.sessions, never()).registerGuestSession(anyString(), anyString());
+        assertTrue(userEvents(fixture.messaging).stream().anyMatch(event ->
+                "helloFailed".equals(event.type()) && "invalid_reconnect_token".equals(event.payload())));
     }
 
     private Fixture fixture() {
@@ -161,7 +227,7 @@ class MultiplayerServiceSecurityTest {
         UserRepository users = mock(UserRepository.class);
         GameService gameService = mock(GameService.class);
         ClockService clocks = new ClockService();
-        MatchmakingService matchmaking = new MatchmakingService(new BCryptPasswordEncoder());
+        MatchmakingService matchmaking = new MatchmakingService();
         RoomService rooms = mock(RoomService.class);
         SessionService sessions = mock(SessionService.class);
         ChessEngine engine = mock(ChessEngine.class);

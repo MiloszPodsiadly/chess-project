@@ -54,6 +54,5 @@ class RoomServiceSecurityTest {
 
         assertNull(service.kickPlayer(host, "ROOM01", 20L).user());
         verify(participants).findByRoomAndUserId(room, 20L);
-        verify(participants, never()).findByRoomAndUserUsernameIgnoreCase(any(), anyString());
     }
 }

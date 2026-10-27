@@ -15,9 +15,17 @@ public interface GamePlayerRepository extends JpaRepository<GamePlayerEntity, Lo
 
     java.util.Optional<GamePlayerEntity> findByReconnectToken(String reconnectToken);
 
+    java.util.Optional<GamePlayerEntity> findByPreviousReconnectTokenHash(String previousReconnectTokenHash);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select player from GamePlayerEntity player where player.reconnectToken = :token")
-    java.util.Optional<GamePlayerEntity> findByReconnectTokenForUpdate(@Param("token") String token);
+    @Query("select player from GamePlayerEntity player where player.reconnectToken = :token "
+            + "or player.previousReconnectTokenHash = :previousHash")
+    java.util.Optional<GamePlayerEntity> findForReconnectUpdate(@Param("token") String token,
+                                                                 @Param("previousHash") String previousHash);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select player from GamePlayerEntity player where player.game.id = :gameId and player.user.id = :userId")
+    GamePlayerEntity findByGameIdAndUserIdForUpdate(@Param("gameId") UUID gameId, @Param("userId") Long userId);
 
     GamePlayerEntity findByGameIdAndUserId(UUID gameId, Long userId);
 }

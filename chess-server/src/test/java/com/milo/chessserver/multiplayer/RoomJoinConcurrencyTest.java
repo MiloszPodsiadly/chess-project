@@ -2,8 +2,11 @@ package com.milo.chessserver.multiplayer;
 
 import com.milo.chessdomain.TimeControlType;
 import com.milo.chessdomain.multiplayer.RoomStatus;
+import com.milo.chessdomain.multiplayer.RoomClosureReason;
+import com.milo.chessdomain.multiplayer.RoomLifecycleEventType;
 import com.milo.chessdomain.multiplayer.CreateRoomRequest;
 import com.milo.chessdomain.multiplayer.JoinRoomRequest;
+import com.milo.chessdomain.multiplayer.SpectateRoomRequest;
 import com.milo.chessserver.user.UserEntity;
 import com.milo.chessserver.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -32,6 +35,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DataJpaTest(properties = {
@@ -94,17 +100,21 @@ class RoomJoinConcurrencyTest {
         String roomCode = "CL" + suffix.toUpperCase();
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        transaction.executeWithoutResult(status -> {
+        List<RoomService.RoomLifecycleChange> changes = transaction.execute(status -> {
             UserEntity host = userRepository.findById(hostId).orElseThrow();
             UserEntity guest = userRepository.findById(guestId).orElseThrow();
             roomService.createRoom(host, new CreateRoomRequest(TimeControlType.RAPID, "Room", null, true), roomCode);
             roomService.joinRoom(guest, new JoinRoomRequest(roomCode, null, null));
-            roomService.handleDisconnect(host);
+            return roomService.handleDisconnect(host);
         });
 
         var room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElseThrow();
         assertEquals(RoomStatus.CLOSED, room.getStatus());
+        assertEquals(RoomClosureReason.HOST_DISCONNECTED, room.getCloseReason());
         assertEquals(0L, participantRepository.countByRoomAndStatus(room, RoomParticipantStatus.ACTIVE));
+        assertEquals(2, changes.get(0).recipientUserIds().size());
+        assertTrue(changes.get(0).recipientUserIds().containsAll(List.of(hostId, guestId)));
+        assertEquals(RoomLifecycleEventType.ROOM_CLOSED, changes.get(0).type());
     }
 
     @Test
@@ -123,11 +133,99 @@ class RoomJoinConcurrencyTest {
             roomRepository.save(room);
         });
 
-        transaction.executeWithoutResult(status -> roomService.cleanupOldRooms(Duration.ofMinutes(10)));
+        List<RoomService.RoomLifecycleChange> changes = transaction.execute(
+                status -> roomService.cleanupOldRooms(Duration.ofMinutes(10)));
 
         var room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElseThrow();
         assertEquals(RoomStatus.CLOSED, room.getStatus());
+        assertEquals(RoomClosureReason.ROOM_EXPIRED, room.getCloseReason());
         assertEquals(0L, participantRepository.countByRoomAndStatus(room, RoomParticipantStatus.ACTIVE));
+        assertEquals(RoomLifecycleEventType.ROOM_CLOSED, changes.get(0).type());
+        assertEquals(List.of(hostId), changes.get(0).recipientUserIds());
+    }
+
+    @Test
+    void deletingRoomCapturesPlayersAndSpectatorsBeforeRevokingMembership() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        UserEntity host = saveUser("host-delete-" + suffix);
+        UserEntity guest = saveUser("guest-delete-" + suffix);
+        UserEntity spectator = saveUser("watch-delete-" + suffix);
+        String roomCode = "DL" + suffix.toUpperCase();
+        roomService.createRoom(host, new CreateRoomRequest(TimeControlType.RAPID, "Room", null, true), roomCode);
+        roomService.joinRoom(guest, new JoinRoomRequest(roomCode, null, null));
+        roomService.spectateRoom(spectator, new SpectateRoomRequest(roomCode));
+
+        RoomService.RoomLifecycleChange change = roomService.deleteRoom(host, roomCode);
+
+        assertEquals(RoomLifecycleEventType.ROOM_CLOSED, change.type());
+        assertEquals(RoomClosureReason.HOST_DELETED, change.closeReason());
+        assertEquals(3, change.recipientUserIds().size());
+        assertTrue(change.recipientUserIds().containsAll(List.of(host.getId(), guest.getId(), spectator.getId())));
+        var room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElseThrow();
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
+        assertEquals(3L, participantRepository.countByRoomAndStatus(room, RoomParticipantStatus.LEFT));
+        assertEquals(RoomLifecycleEventType.ROOM_CLOSED,
+                roomService.roomParticipants(host, roomCode).memberEvent());
+        assertEquals(RoomStatus.CLOSED, roomService.roomParticipants(host, roomCode).roomStatus());
+        assertNull(roomService.deleteRoom(host, roomCode));
+    }
+
+    @Test
+    void kickIsDistinctFromVoluntaryLeaveAndFormerMemberCanReadItsLifecycleState() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        UserEntity host = saveUser("host-kick-" + suffix);
+        UserEntity kicked = saveUser("kicked-" + suffix);
+        UserEntity leaver = saveUser("leaver-" + suffix);
+        String roomCode = "KI" + suffix.toUpperCase();
+        roomService.createRoom(host, new CreateRoomRequest(TimeControlType.RAPID, "Room", null, true), roomCode);
+        roomService.joinRoom(kicked, new JoinRoomRequest(roomCode, null, null));
+        var kickedResult = roomService.kickPlayer(host, roomCode, kicked.getId());
+        assertEquals(RoomLifecycleEventType.PARTICIPANT_KICKED, kickedResult.lifecycleChange().type());
+        var room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElseThrow();
+        assertEquals(RoomParticipantStatus.KICKED,
+                participantRepository.findByRoomAndUserId(room, kicked.getId()).orElseThrow().getStatus());
+        assertEquals(RoomLifecycleEventType.PARTICIPANT_KICKED,
+                roomService.roomParticipants(kicked, roomCode).memberEvent());
+
+        roomService.joinRoom(leaver, new JoinRoomRequest(roomCode, null, null));
+        RoomService.RoomLifecycleChange left = roomService.leaveRoom(leaver, roomCode);
+        assertEquals(RoomLifecycleEventType.PARTICIPANT_LEFT, left.type());
+        assertEquals(RoomStatus.OPEN, left.roomStatus());
+        assertEquals(List.of(host.getId()), left.recipientUserIds());
+        assertEquals(RoomLifecycleEventType.PARTICIPANT_LEFT,
+                participantRepository.findByRoomAndUserId(
+                        roomRepository.findByRoomCodeIgnoreCase(roomCode).orElseThrow(), leaver.getId())
+                        .orElseThrow().getLastLifecycleEvent());
+    }
+
+    @Test
+    void disconnectedPrivateRoomMemberCanRecoverItsIdentityAndClosedRoomState() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        UserEntity host = saveUser("host-recover-" + suffix);
+        UserEntity guest = saveUser("guest-recover-" + suffix);
+        UserEntity outsider = saveUser("outsider-recover-" + suffix);
+        String roomCode = "RC" + suffix.toUpperCase();
+        var created = roomService.createRoom(host,
+                new CreateRoomRequest(TimeControlType.RAPID, "Private", "secret", false), roomCode);
+        var joined = roomService.joinRoom(guest, new JoinRoomRequest(roomCode, "secret", null));
+        assertNotNull(created.recoveryToken());
+        assertNotNull(joined.recoveryToken());
+
+        roomService.handleDisconnect(guest);
+        roomService.deleteRoom(host, roomCode);
+
+        var recovered = roomService.recoverRoomSession(joined.recoveryToken());
+        assertEquals(guest.getId(), recovered.user().getId());
+        assertNotNull(recovered.recoveryToken());
+        assertNotEquals(joined.recoveryToken(), recovered.recoveryToken());
+        var terminalState = roomService.roomParticipants(recovered.user(), roomCode);
+        assertEquals(RoomStatus.CLOSED, terminalState.roomStatus());
+        assertEquals(RoomClosureReason.HOST_DELETED, terminalState.closeReason());
+        assertEquals(RoomLifecycleEventType.ROOM_CLOSED, terminalState.memberEvent());
+        assertTrue(terminalState.participants().isEmpty());
+
+        assertNull(roomService.recoverRoomSession(joined.recoveryToken()).user());
+        assertNull(roomService.roomParticipants(outsider, roomCode));
     }
 
     private UserEntity saveUser(String username) {
