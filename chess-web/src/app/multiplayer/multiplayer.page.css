@@ -1,23 +1,20 @@
 .page {
   min-height: 100vh;
   padding: 28px 32px;
-  background:
-    radial-gradient(1200px 600px at 10% 10%, rgba(40, 120, 140, 0.35), transparent 60%),
-    radial-gradient(900px 480px at 80% 0%, rgba(20, 90, 110, 0.35), transparent 55%),
-    #0b1217;
-  color: #e6ebf2;
-  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  background: var(--arena-page-background);
+  color: var(--arena-text);
+  font-family: var(--arena-font);
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border: 1px solid rgba(35, 60, 70, 0.6);
-  border-radius: 18px;
+  border: 1px solid var(--arena-card-border);
+  border-radius: var(--arena-radius-card);
   padding: 20px 24px;
-  background: rgba(8, 18, 24, 0.9);
-  box-shadow: 0 18px 40px rgba(5, 12, 18, 0.45);
+  background: var(--arena-panel);
+  box-shadow: var(--arena-shadow-card);
 }
 
 .brand {
@@ -28,8 +25,8 @@
 
 .brand-mark {
   font-size: 26px;
-  background: linear-gradient(140deg, #1f9f76, #0f5c4b);
-  color: #0b1217;
+  background: linear-gradient(140deg, var(--arena-accent-strong), #0f5c4b);
+  color: var(--arena-accent-ink);
   width: 44px;
   height: 44px;
   border-radius: 14px;
@@ -45,7 +42,7 @@
 
 .brand-subtitle {
   font-size: 13px;
-  color: #9ca8bb;
+  color: var(--arena-muted);
 }
 
 .status {
@@ -57,7 +54,7 @@
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid rgba(60, 110, 120, 0.6);
-  background: rgba(10, 20, 26, 0.7);
+  background: var(--arena-control);
 }
 
 .status.online {
@@ -76,14 +73,15 @@
 .grid {
   margin-top: 24px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 20px;
 }
 
 .card {
-  background: rgba(7, 16, 20, 0.92);
-  border: 1px solid rgba(30, 65, 80, 0.55);
-  border-radius: 18px;
+  min-width: 0;
+  background: var(--arena-card);
+  border: 1px solid var(--arena-card-border);
+  border-radius: var(--arena-radius-card);
   padding: 22px;
   box-shadow: inset 0 0 0 1px rgba(12, 22, 28, 0.5);
   display: flex;
@@ -105,7 +103,7 @@ h2 {
   margin: 0;
   font-size: 18px;
   letter-spacing: 0.4px;
-  color: #d9e5f3;
+  color: var(--arena-text-strong);
 }
 
 label {
@@ -113,7 +111,7 @@ label {
   flex-direction: column;
   gap: 8px;
   font-size: 13px;
-  color: #b9c5d6;
+  color: var(--arena-muted);
 }
 
 .toggle {
@@ -125,31 +123,35 @@ label {
 
 input,
 select {
-  border-radius: 10px;
-  border: 1px solid #2c3442;
-  background: #0c0f14;
-  color: #f5f7fb;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border-radius: var(--arena-radius-control);
+  border: 1px solid var(--arena-control-border);
+  background: var(--arena-control);
+  color: var(--arena-text-strong);
   padding: 10px 12px;
   font-size: 14px;
 }
 
 button {
+  min-height: 42px;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--arena-radius-control);
   padding: 12px 16px;
   font-weight: 600;
   cursor: pointer;
 }
 
 button.primary {
-  background: #1f9f76;
-  color: #0b1217;
+  background: var(--arena-accent-strong);
+  color: var(--arena-accent-ink);
 }
 
 button.ghost {
   background: transparent;
-  border: 1px solid #2c3442;
-  color: #d8e2f0;
+  border: 1px solid var(--arena-control-border);
+  color: var(--arena-text);
 }
 
 .actions {
@@ -159,8 +161,8 @@ button.ghost {
 }
 
 .room {
-  background: rgba(8, 14, 20, 0.8);
-  border-radius: 12px;
+  background: var(--arena-control);
+  border-radius: var(--arena-radius-control);
   padding: 12px;
   border: 1px dashed rgba(60, 110, 120, 0.6);
 }
@@ -198,6 +200,7 @@ button.ghost {
 .state-line {
   font-size: 13px;
   color: #c6d0df;
+  overflow-wrap: anywhere;
 }
 
 .error {
@@ -211,11 +214,18 @@ button.ghost {
 
 @media (max-width: 720px) {
   .page {
-    padding: 20px;
+    padding: 16px;
   }
   .topbar {
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;
   }
+}
+
+@media (max-width: 390px) {
+  .page { padding: 10px; }
+  .topbar { padding: 14px; }
+  .card { padding: 16px; }
+  .actions > button { flex: 1 1 100%; }
 }

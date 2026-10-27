@@ -1,0 +1,139 @@
+:host {
+  display: grid;
+  width: 100%;
+  min-height: 180px;
+  place-items: center;
+  container-type: inline-size;
+}
+
+.arena-animation {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  width: 100%;
+  color: var(--arena-muted);
+}
+
+.arena-scene {
+  position: relative;
+  width: min(100%, 310px);
+  aspect-ratio: 1;
+  perspective: 800px;
+}
+
+.arena-light {
+  position: absolute;
+  inset: 4% -4% -6%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(53, 181, 156, .19), transparent 68%);
+  filter: blur(12px);
+  opacity: .7;
+  animation: arena-breathe 6s ease-in-out infinite;
+}
+
+.arena-board {
+  position: absolute;
+  inset: 7%;
+  display: grid;
+  grid-template: repeat(8, 1fr) / repeat(8, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(141, 201, 202, .4);
+  border-radius: 8px;
+  background: #10212a;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .45), inset 0 0 25px rgba(41, 134, 127, .13);
+  transform: rotateX(7deg) rotateZ(-2deg);
+  transform-style: preserve-3d;
+  animation: board-float 8s ease-in-out infinite;
+}
+
+.arena-square { background: #10212a; }
+.arena-square.light { background: #28444a; }
+
+.arena-highlight {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  background: rgba(91, 213, 166, .18);
+  box-shadow: inset 0 0 18px rgba(91, 213, 166, .24);
+}
+
+.highlight-a { left: 25%; top: 50%; }
+.highlight-b { left: 50%; top: 25%; }
+
+.arena-piece {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  width: 12.5%;
+  height: 12.5%;
+  place-items: center;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, .55));
+}
+
+.arena-piece img { display: block; width: 86%; height: 86%; object-fit: contain; }
+.piece-knight { left: 12.5%; top: 62.5%; animation: knight-tour 8s ease-in-out infinite; }
+.piece-king { left: 62.5%; top: 12.5%; opacity: .92; }
+.piece-bishop { left: 75%; top: 75%; opacity: .82; animation: piece-glow 4s ease-in-out infinite; }
+
+.arena-caption {
+  min-height: 1.2em;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.state-waiting .arena-light { opacity: .92; animation-duration: 3.4s; }
+.state-waiting .highlight-a { animation: square-pulse 2.6s ease-in-out infinite; }
+.state-waiting .piece-knight { animation-duration: 10s; }
+.state-match-found .arena-board { animation: match-arrive 900ms cubic-bezier(.2,.8,.2,1) both; }
+.state-match-found .arena-light { opacity: 1; }
+.state-reconnecting .arena-light { opacity: .3; animation: none; }
+.state-reconnecting .arena-piece { opacity: .66; animation: none; }
+.state-reconnecting .arena-caption { color: var(--arena-muted); }
+.is-paused .arena-light,
+.is-paused .arena-board,
+.is-paused .arena-piece,
+.is-paused .arena-highlight { animation-play-state: paused; }
+.state-active .arena-caption { color: var(--arena-accent); }
+
+@keyframes knight-tour {
+  0%, 14% { transform: translate(0, 0); }
+  28%, 42% { transform: translate(100%, -200%); }
+  56%, 70% { transform: translate(300%, -100%); }
+  84%, 96% { transform: translate(200%, 100%); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes board-float {
+  0%, 100% { transform: rotateX(7deg) rotateZ(-2deg) translateY(0); }
+  50% { transform: rotateX(5deg) rotateZ(-1deg) translateY(-3px); }
+}
+
+@keyframes arena-breathe {
+  0%, 100% { transform: scale(.92); opacity: .52; }
+  50% { transform: scale(1.06); opacity: .9; }
+}
+
+@keyframes piece-glow {
+  0%, 100% { filter: drop-shadow(0 3px 3px rgba(0,0,0,.55)); }
+  50% { filter: drop-shadow(0 3px 8px rgba(113,204,163,.45)); }
+}
+
+@keyframes square-pulse {
+  0%, 100% { opacity: .55; }
+  50% { opacity: 1; }
+}
+
+@keyframes match-arrive {
+  from { opacity: .6; transform: rotateX(12deg) rotateZ(-5deg) scale(.92); }
+  to { opacity: 1; transform: rotateX(7deg) rotateZ(-2deg) scale(1); }
+}
+
+@container (max-width: 360px) {
+  .arena-caption { font-size: 11px; }
+  .arena-scene { width: min(100%, 250px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arena-light, .arena-board, .arena-piece, .arena-highlight { animation: none !important; }
+}

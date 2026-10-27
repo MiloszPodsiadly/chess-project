@@ -1,0 +1,34 @@
+<div
+  class="arena-animation"
+  [class.state-lobby]="state === 'LOBBY'"
+  [class.state-waiting]="state === 'WAITING_FOR_OPPONENT'"
+  [class.state-match-found]="state === 'MATCH_FOUND'"
+  [class.state-reconnecting]="state === 'RECONNECTING'"
+  [class.state-active]="state === 'ACTIVE_GAME'"
+  role="status"
+  [attr.aria-live]="state === 'MATCH_FOUND' ? 'polite' : 'off'"
+  [attr.aria-label]="statusLabel"
+>
+  <div class="arena-scene" aria-hidden="true">
+    <div class="arena-light"></div>
+    <div class="arena-board">
+      <span
+        class="arena-square"
+        *ngFor="let square of squares"
+        [class.light]="(Math.floor(square / 8) + square % 8) % 2 === 0"
+      ></span>
+      <span class="arena-highlight highlight-a"></span>
+      <span class="arena-highlight highlight-b"></span>
+      <span class="arena-piece piece-knight">
+        <img src="/assets/pieces/white/Chess_nlt45.svg" alt="" />
+      </span>
+      <span class="arena-piece piece-king">
+        <img src="/assets/pieces/black/Chess_kdt45.svg" alt="" />
+      </span>
+      <span class="arena-piece piece-bishop">
+        <img src="/assets/pieces/white/Chess_blt45.svg" alt="" />
+      </span>
+    </div>
+  </div>
+  <span class="arena-caption">{{ statusLabel }}</span>
+</div>

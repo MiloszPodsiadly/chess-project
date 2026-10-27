@@ -7,38 +7,38 @@
         <div class="brand-subtitle">Real-time multiplayer lobby</div>
       </div>
     </div>
-    <div class="status" [class.online]="(multiplayer.connected$ | async) === true">
+    <div class="status" [class.online]="(multiplayer.ready$ | async) === true">
       <span class="dot"></span>
-      <span>{{ (multiplayer.connected$ | async) ? 'Online' : 'Offline' }}</span>
+      <span>{{ (multiplayer.connectionState$ | async) || 'DISCONNECTED' }}</span>
     </div>
   </header>
 
   <div class="grid">
-    <section class="card">
+    <section class="card arena-card">
       <h2>Connect</h2>
       <p class="muted">Guest mode works instantly. Reconnect token lets you restore a game.</p>
       <label>
         Username (optional)
-        <input [(ngModel)]="username" placeholder="guest" />
+        <input class="arena-field" [(ngModel)]="username" placeholder="guest" />
       </label>
       <label>
         Reconnect token
-        <input [(ngModel)]="reconnectToken" placeholder="paste token" />
+        <input class="arena-field" [(ngModel)]="reconnectToken" placeholder="paste token" />
       </label>
-      <button class="primary" (click)="connect()">Connect to WS</button>
+      <button class="primary arena-button arena-button--primary" (click)="connect()">Connect to WS</button>
     </section>
 
-    <section class="card">
+    <section class="card arena-card">
       <h2>Lobby</h2>
       <label>
         Time control
-        <select [(ngModel)]="timeControl">
+        <select class="arena-field" [(ngModel)]="timeControl">
           <option *ngFor="let tc of timeControls" [value]="tc">{{ tc }}</option>
         </select>
       </label>
       <label>
         Room name (optional)
-        <input [(ngModel)]="roomName" placeholder="Friday Blitz" />
+        <input class="arena-field" [(ngModel)]="roomName" placeholder="Friday Blitz" />
       </label>
       <label class="toggle">
         <span>Public room</span>
@@ -46,28 +46,30 @@
       </label>
       <label *ngIf="!isPublicRoom">
         Room password
-        <input [(ngModel)]="roomPassword" placeholder="secret" />
+        <input class="arena-field" [(ngModel)]="roomPassword" placeholder="secret" />
       </label>
       <div class="actions">
-        <button class="ghost" (click)="createRoom()">Create room</button>
-        <button class="ghost" (click)="queue()">Queue matchmaking</button>
+        <button class="ghost arena-button arena-button--secondary" (click)="createRoom()">Create room</button>
+        <button class="ghost arena-button arena-button--secondary" (click)="queue()" [disabled]="(multiplayer.queueState$ | async) === 'QUEUED'">Queue matchmaking</button>
+        <button class="ghost arena-button arena-button--secondary" (click)="multiplayer.cancelMatchmaking()" *ngIf="(multiplayer.queueState$ | async) === 'QUEUED'">Cancel search</button>
       </div>
+      <p class="muted" *ngIf="(multiplayer.queueState$ | async) === 'QUEUED'">Searching for an opponent...</p>
       <div class="room">
         <div class="room-label">Room code</div>
         <div class="room-code">{{ multiplayer.roomCode$ | async }}</div>
       </div>
       <label>
         Join room
-        <input [(ngModel)]="roomCode" placeholder="ABC123" />
+        <input class="arena-field" [(ngModel)]="roomCode" placeholder="ABC123" />
       </label>
       <label>
         Room password (optional)
-        <input [(ngModel)]="joinPassword" placeholder="password" />
+        <input class="arena-field" [(ngModel)]="joinPassword" placeholder="password" />
       </label>
-      <button class="primary" (click)="joinRoom()">Join room</button>
+      <button class="primary arena-button arena-button--primary" (click)="joinRoom()">Join room</button>
     </section>
 
-    <section class="card">
+    <section class="card arena-card">
       <h2>Game state</h2>
       <div *ngIf="(multiplayer.gameState$ | async) as state; else noGame">
         <div class="state-line">Game ID: {{ state.gameId }}</div>
@@ -88,7 +90,7 @@
             <div class="time">{{ state.blackTimeLeftMs }} ms</div>
           </div>
         </div>
-        <button class="ghost" (click)="sync()">Request sync</button>
+        <button class="ghost arena-button arena-button--secondary" (click)="sync()">Request sync</button>
       </div>
       <ng-template #noGame>
         <p class="muted">No active game yet. Create or join a room.</p>

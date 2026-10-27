@@ -15,9 +15,10 @@ import { Chess } from 'chess.js';
 import { ActivatedRoute } from '@angular/router';
 import { TimeControlType } from '../multiplayer/models';
 import { strengthCategory } from '../bot/strength-catalog';
-import { GameOutcome, serverOutcome } from './game-outcome';
+import { GameOutcome, multiplayerOutcome as toMultiplayerOutcome, serverOutcome } from './game-outcome';
 import { GameResultPanelComponent } from './game-result-panel/game-result-panel.component';
 import { BotSetupComponent } from './bot-setup/bot-setup.component';
+import { ChessArenaAnimationComponent, ChessArenaState } from './chess-arena-animation/chess-arena-animation.component';
 
 type PieceCode = string | null;
 type BotErrorScope = 'authentication' | 'configuration' | 'engine' | 'gameplay' | 'recovery';
@@ -25,7 +26,7 @@ type BotErrorScope = 'authentication' | 'configuration' | 'engine' | 'gameplay' 
 @Component({
   selector: 'app-game-page',
   standalone: true,
-  imports: [AsyncPipe, NgIf, NgForOf, DatePipe, FormsModule, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent, GameResultPanelComponent, BotSetupComponent],
+  imports: [AsyncPipe, NgIf, NgForOf, DatePipe, FormsModule, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent, GameResultPanelComponent, BotSetupComponent, ChessArenaAnimationComponent],
   templateUrl: './game.page.html',
   styleUrl: './game.page.css'
 })
@@ -101,7 +102,6 @@ export class GamePageComponent {
   chatMessage = '';
   onlineView: 'public' | 'create' | 'join' | 'manage' = 'public';
   private pendingOnlineAction: (() => void) | null = null;
-  private pendingOnlineTimer: number | null = null;
   showOnlineSetup = false;
   onlineUsername = '';
   onlineReconnect = '';
@@ -115,6 +115,7 @@ export class GamePageComponent {
   clockTimer: number | null = null;
   private onlineAutoConnected = false;
   sessionUsername: string | null = null;
+  sessionUserId: number | null = null;
   private destroyed = false;
 
   readonly translations = {
@@ -179,6 +180,7 @@ export class GamePageComponent {
       endCheckmate: 'Checkmate',
       endResign: 'Resignation',
       endTimeout: 'Time out',
+      endDisconnectTimeout: 'Game ended after the opponent did not reconnect in time',
       endStalemate: 'Stalemate',
       endAgreement: 'Agreed draw',
       endRepetition: 'Threefold repetition',
@@ -187,6 +189,17 @@ export class GamePageComponent {
       connect: 'Connect',
       connected: 'Connected',
       disconnected: 'Disconnected',
+      connecting: 'Connecting to server...',
+      authenticating: 'Signing in...',
+      reconnecting: 'Server unavailable. Reconnecting...',
+      recoveringGame: 'Restoring game state...',
+      reconnectFailed: 'Reconnect failed. Try again.',
+      opponentConnected: 'Opponent connected',
+      opponentDisconnected: 'Opponent disconnected. Waiting for them to reconnect...',
+      matchmakingQueued: 'Searching for an opponent...',
+      cancelQueue: 'Cancel search',
+      retryConnection: 'Retry connection',
+      alreadyQueued: 'You are already in the matchmaking queue.',
       createRoom: 'Create room',
       joinRoom: 'Join room',
       matchmaking: 'Matchmaking',
@@ -335,6 +348,7 @@ export class GamePageComponent {
       endCheckmate: 'Mat',
       endResign: 'Poddanie',
       endTimeout: 'Czas',
+      endDisconnectTimeout: 'Partia zakonczona po uplywie czasu na powrot przeciwnika',
       endStalemate: 'Pat',
       endAgreement: 'Remis zgodny',
       endRepetition: 'Trzykrotne powtorzenie',
@@ -343,6 +357,17 @@ export class GamePageComponent {
       connect: 'Polacz',
       connected: 'Polaczono',
       disconnected: 'Brak polaczenia',
+      connecting: 'Laczenie z serwerem...',
+      authenticating: 'Logowanie...',
+      reconnecting: 'Serwer niedostepny. Ponawianie polaczenia...',
+      recoveringGame: 'Przywracanie stanu partii...',
+      reconnectFailed: 'Nie udalo sie polaczyc ponownie. Sprobuj jeszcze raz.',
+      opponentConnected: 'Przeciwnik polaczony',
+      opponentDisconnected: 'Przeciwnik utracil polaczenie. Czekamy na jego powrot...',
+      matchmakingQueued: 'Szukamy przeciwnika...',
+      cancelQueue: 'Anuluj szukanie',
+      retryConnection: 'Polacz ponownie',
+      alreadyQueued: 'Jestes juz w kolejce matchmakingu.',
       createRoom: 'Utworz pokoj',
       joinRoom: 'Dolacz do pokoju',
       matchmaking: 'Matchmaking',
@@ -520,10 +545,6 @@ export class GamePageComponent {
         if (ready && this.pendingOnlineAction) {
           const action = this.pendingOnlineAction;
           this.pendingOnlineAction = null;
-          if (this.pendingOnlineTimer) {
-            window.clearTimeout(this.pendingOnlineTimer);
-            this.pendingOnlineTimer = null;
-          }
           action();
         }
       });
@@ -534,16 +555,6 @@ export class GamePageComponent {
         if (!connected) {
           this.pendingServerMove = false;
         }
-        if (!connected || !this.pendingOnlineAction) {
-          return;
-        }
-        const action = this.pendingOnlineAction;
-        this.pendingOnlineAction = null;
-        if (this.pendingOnlineTimer) {
-          window.clearTimeout(this.pendingOnlineTimer);
-          this.pendingOnlineTimer = null;
-        }
-        window.setTimeout(() => action(), 300);
       });
 
     this.multiplayer.sessionUsername$
@@ -554,6 +565,12 @@ export class GamePageComponent {
           this.onlineUsername = username;
           this.safeSessionSet('onlineUsername', username);
         }
+      });
+
+    this.multiplayer.sessionUserId$
+      .pipe(takeUntilDestroyed(destroyRef))
+      .subscribe((userId) => {
+        this.sessionUserId = userId;
       });
 
     this.multiplayer.reconnectToken$
@@ -1098,7 +1115,6 @@ export class GamePageComponent {
   startOnlineMatchmaking() {
     this.runOnlineAction(() => {
       this.multiplayer.queueMatchmaking(this.onlineTimeControl);
-      this.showOnlineSetup = false;
     });
   }
 
@@ -1302,6 +1318,10 @@ export class GamePageComponent {
       case 'matchmaking_failed':
       case 'matchmakingFailed':
         return 'Matchmaking unavailable.';
+      case 'already_queued':
+        return this.t('alreadyQueued');
+      case 'reconnect_failed':
+        return this.t('reconnectFailed');
       case 'room_invite_failed':
       case 'roomInviteFailed':
         return 'Unable to create invite.';
@@ -1332,11 +1352,11 @@ export class GamePageComponent {
     }
   }
 
-  isOwnRoom(room: { hostUsername?: string | null }) {
-    if (!room || !room.hostUsername || !this.sessionUsername) {
+  isOwnRoom(room: { hostUserId?: number | null }) {
+    if (!room || room.hostUserId == null || this.sessionUserId == null) {
       return false;
     }
-    return room.hostUsername.toLowerCase() === this.sessionUsername.toLowerCase();
+    return room.hostUserId === this.sessionUserId;
   }
 
   roomParticipants() {
@@ -1344,24 +1364,24 @@ export class GamePageComponent {
   }
 
   isHostInRoom() {
-    const username = this.sessionUsername;
-    if (!username) {
+    const userId = this.sessionUserId;
+    if (userId == null) {
       return false;
     }
     return this.multiplayer.roomParticipants$.value.some(
-      (p) => (p.role || '').toUpperCase() === 'HOST' && (p.username || '').toLowerCase() === username.toLowerCase()
+      (p) => (p.role || '').toUpperCase() === 'HOST' && p.userId === userId
     );
   }
 
-  canKickParticipant(participant: { username?: string | null; role?: string | null }) {
-    if (!participant || !participant.username) {
+  canKickParticipant(participant: { userId?: number | null; role?: string | null }) {
+    if (!participant || participant.userId == null) {
       return false;
     }
     const role = (participant.role || '').toUpperCase();
     if (role !== 'PLAYER' && role !== 'SPECTATOR') {
       return false;
     }
-    return this.isHostInRoom() && participant.username.toLowerCase() !== (this.sessionUsername || '').toLowerCase();
+    return this.isHostInRoom() && participant.userId !== this.sessionUserId;
   }
 
   hasPendingPlayer() {
@@ -1371,15 +1391,15 @@ export class GamePageComponent {
   }
 
   private isPlayerInRoom() {
-    const username = this.sessionUsername;
-    if (!username) {
+    const userId = this.sessionUserId;
+    if (userId == null) {
       return false;
     }
     return this.multiplayer.roomParticipants$.value.some(
       (p) =>
         (p.role || '').toUpperCase() === 'PLAYER' &&
         (p.status || '').toUpperCase() !== 'LEFT' &&
-        (p.username || '').toLowerCase() === username.toLowerCase()
+        p.userId === userId
     );
   }
 
@@ -1410,70 +1430,35 @@ export class GamePageComponent {
     return this.onlineMode && !!this.multiplayer.gameState$.value?.gameId;
   }
 
+  connectionStatusLabel() {
+    switch (this.multiplayer.connectionState$.value) {
+      case 'CONNECTING': return this.t('connecting');
+      case 'AUTHENTICATING': return this.t('authenticating');
+      case 'RECONNECTING': return this.t('reconnecting');
+      case 'RECOVERING_GAME': return this.t('recoveringGame');
+      case 'ERROR': return this.t('reconnectFailed');
+      case 'READY': return this.t('connected');
+      default: return this.t('disconnected');
+    }
+  }
+
+  multiplayerOutcome() {
+    const game = this.multiplayer.gameState$.value;
+    return game ? toMultiplayerOutcome(game, this.multiplayer.yourColor$.value) : null;
+  }
+
+  chessArenaState(): ChessArenaState {
+    const connection = this.multiplayer.connectionState$.value;
+    if (connection === 'RECONNECTING' || connection === 'RECOVERING_GAME') return 'RECONNECTING';
+    if (this.multiplayer.matchFound$.value) return 'MATCH_FOUND';
+    if (this.multiplayer.gameState$.value?.gameId) return 'ACTIVE_GAME';
+    if (this.multiplayer.queueState$.value === 'QUEUED') return 'WAITING_FOR_OPPONENT';
+    return 'LOBBY';
+  }
+
   isSpectator() {
     return this.onlineMode && !this.multiplayer.yourColor$.value && !!this.multiplayer.gameState$.value?.gameId;
   }
-
-  multiplayerResultTitle() {
-    const game = this.multiplayer.gameState$.value;
-    if (!game || game.result === 'ONGOING') {
-      return '';
-    }
-    if (game.result === 'DRAW') {
-      return this.t('resultDraw');
-    }
-    const yourColor = this.multiplayer.yourColor$.value;
-    if (game.result === 'WHITE_WIN') {
-      return yourColor === 'WHITE' ? this.t('resultWin') : this.t('resultLoss');
-    }
-    if (game.result === 'BLACK_WIN') {
-      return yourColor === 'BLACK' ? this.t('resultWin') : this.t('resultLoss');
-    }
-    return this.t('gameOver');
-  }
-
-  multiplayerResultClass(): 'win' | 'loss' | 'draw' | '' {
-    const game = this.multiplayer.gameState$.value;
-    if (!game || game.result === 'ONGOING') {
-      return '';
-    }
-    if (game.result === 'DRAW') {
-      return 'draw';
-    }
-    const yourColor = this.multiplayer.yourColor$.value;
-    if (game.result === 'WHITE_WIN') {
-      return yourColor === 'WHITE' ? 'win' : 'loss';
-    }
-    if (game.result === 'BLACK_WIN') {
-      return yourColor === 'BLACK' ? 'win' : 'loss';
-    }
-    return '';
-  }
-
-  multiplayerEndReason() {
-    const reason = this.multiplayer.gameState$.value?.endReason;
-    switch (reason) {
-      case 'CHECKMATE':
-        return this.t('endCheckmate');
-      case 'RESIGNATION':
-        return this.t('endResign');
-      case 'TIME_OUT':
-        return this.t('endTimeout');
-      case 'STALEMATE':
-        return this.t('endStalemate');
-      case 'AGREED_DRAW':
-        return this.t('endAgreement');
-      case 'THREEFOLD_REPETITION':
-        return this.t('endRepetition');
-      case 'FIFTY_MOVE_RULE':
-        return this.t('endFifty');
-      case 'INSUFFICIENT_MATERIAL':
-        return this.t('endInsufficient');
-      default:
-        return '';
-    }
-  }
-
 
   colorLabel(color: 'w' | 'b') {
     return color === 'w' ? this.t('white') : this.t('black');
@@ -1534,7 +1519,8 @@ export class GamePageComponent {
         && this.state.sideToMove$.value === this.playerColor;
     }
     if (this.multiplayer.gameState$.value?.gameId) {
-      return this.multiplayer.gameState$.value.result === 'ONGOING';
+      return this.multiplayer.gameState$.value.result === 'ONGOING'
+        && this.multiplayer.connectionState$.value === 'READY';
     }
     return !this.state.isGameOver();
   }
@@ -1609,28 +1595,28 @@ export class GamePageComponent {
       action();
       return;
     }
-    if (this.multiplayer.connected$.value) {
-      window.setTimeout(() => action(), 300);
-      return;
-    }
     this.pendingOnlineAction = action;
-    if (this.pendingOnlineTimer) {
-      window.clearTimeout(this.pendingOnlineTimer);
+    if (this.multiplayer.connectionState$.value === 'DISCONNECTED'
+        || this.multiplayer.connectionState$.value === 'ERROR') {
+      this.connectOnline();
     }
-    this.connectOnline();
-    this.pendingOnlineTimer = window.setTimeout(() => {
-      if (this.pendingOnlineAction && this.multiplayer.connected$.value) {
-        const pending = this.pendingOnlineAction;
-        this.pendingOnlineAction = null;
-        this.pendingOnlineTimer = null;
-        pending();
-      }
-    }, 2000);
   }
 
   setOnlineView(view: 'public' | 'create' | 'join' | 'manage') {
     this.onlineView = view;
     this.multiplayer.clearLastError();
+  }
+
+  onOnlineTabKeydown(event: KeyboardEvent) {
+    const tabs: Array<typeof this.onlineView> = ['public', 'create', 'join', 'manage'];
+    const index = tabs.indexOf(this.onlineView);
+    const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+      : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    this.setOnlineView(tabs[next]);
+    (event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   }
 
   private parseEvalValue(raw: string | null | undefined) {

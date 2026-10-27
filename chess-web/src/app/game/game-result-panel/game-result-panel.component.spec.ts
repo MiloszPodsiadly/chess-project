@@ -31,4 +31,15 @@ describe('GameResultPanelComponent', () => {
     expect(panel.title).toBe('White wins');
     expect(panel.reason).toBe('Time expired');
   });
+
+  it('uses the shared lobby action and disconnect reason for multiplayer results', () => {
+    const panel = new GameResultPanelComponent();
+    panel.mode = 'multiplayer';
+    panel.outcome = outcome('WHITE_WIN', 'LOSS', 'DISCONNECT_TIMEOUT');
+    expect(panel.playLabel).toBe('Back to lobby');
+    expect(panel.reason).toBe('Opponent did not reconnect in time');
+    panel.lang = 'pl';
+    expect(panel.playLabel).toBe('Wróć do lobby');
+    expect(panel.reason).toBe('Przeciwnik nie wrócił na czas');
+  });
 });

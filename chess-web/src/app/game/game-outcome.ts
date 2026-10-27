@@ -1,11 +1,12 @@
 import { Chess } from 'chess.js';
 import { ServerEngineGame } from '../bot/engine-game-api.service';
+import { GameStateSyncDto } from '../multiplayer/models';
 
 export type GameColor = 'WHITE' | 'BLACK';
 export type GameResult = 'WHITE_WIN' | 'BLACK_WIN' | 'DRAW';
 export type EndReason = 'CHECKMATE' | 'STALEMATE' | 'THREEFOLD_REPETITION'
   | 'FIFTY_MOVE_RULE' | 'INSUFFICIENT_MATERIAL' | 'RESIGNATION'
-  | 'TIME_OUT' | 'AGREED_DRAW' | 'UNKNOWN';
+  | 'TIME_OUT' | 'DISCONNECT_TIMEOUT' | 'AGREED_DRAW' | 'UNKNOWN';
 
 export interface GameOutcome {
   status: 'FINISHED';
@@ -48,8 +49,19 @@ export function localOutcome(chess: Chess, playerColor: GameColor, gameId: strin
 export function serverOutcome(game: ServerEngineGame): GameOutcome | null {
   if (game.result === 'ONGOING') return null;
   const knownReasons: EndReason[] = ['CHECKMATE', 'STALEMATE', 'THREEFOLD_REPETITION',
-    'FIFTY_MOVE_RULE', 'INSUFFICIENT_MATERIAL', 'RESIGNATION', 'TIME_OUT', 'AGREED_DRAW'];
+    'FIFTY_MOVE_RULE', 'INSUFFICIENT_MATERIAL', 'RESIGNATION', 'TIME_OUT',
+    'DISCONNECT_TIMEOUT', 'AGREED_DRAW'];
   const reason = knownReasons.includes(game.endReason as EndReason)
     ? game.endReason as EndReason : 'UNKNOWN';
   return finish(game.result, reason, game.playerColor, game.fen, game.moves.length, game.gameId);
+}
+
+export function multiplayerOutcome(game: GameStateSyncDto, playerColor: GameStateSyncDto['yourColor']): GameOutcome | null {
+  if (game.result === 'ONGOING') return null;
+  const knownReasons: EndReason[] = ['CHECKMATE', 'STALEMATE', 'THREEFOLD_REPETITION',
+    'FIFTY_MOVE_RULE', 'INSUFFICIENT_MATERIAL', 'RESIGNATION', 'TIME_OUT',
+    'DISCONNECT_TIMEOUT', 'AGREED_DRAW'];
+  const reason = knownReasons.includes(game.endReason as EndReason)
+    ? game.endReason as EndReason : 'UNKNOWN';
+  return finish(game.result, reason, playerColor ?? null, game.fen, game.moves.length, game.gameId);
 }

@@ -21,6 +21,8 @@ Play a quick game, challenge Stockfish 19, or meet another player online. I buil
 
 The interface supports English and Polish. Guest games run locally; signed-in bot games and online games are saved on the server.
 
+Native training levels from 1320 to 3190 are sent as Stockfish `UCI_Elo` settings; they are requested engine settings, not measured playing ratings. Native search budgets are selectable per move (3, 10, 30, or 60 seconds). Search depth and actual duration vary with the position and hardware, and the project does not claim an independently measured playing strength.
+
 ## Get started
 
 Install Docker and Docker Compose, then run:
@@ -31,7 +33,11 @@ docker compose up --build -d
 
 Open **http://localhost:3000**. The build includes both engines, so there is no separate Stockfish setup. Stop the app with `docker compose down`; your database volume stays in place.
 
-Docker Compose uses a local development profile. For another deployment, set `JWT_SECRET`, `DB_USER`, `DB_PASSWORD`, and `SPRING_DATASOURCE_URL` in its environment.
+Docker Compose uses a local development profile. For another deployment, set `JWT_SECRET`, `DB_USER`, `DB_PASSWORD`, `SPRING_DATASOURCE_URL`, and `CHESS_ALLOWED_ORIGINS` in its environment. `CHESS_ALLOWED_ORIGINS` is a comma-separated list of exact browser origins allowed to connect to the WebSocket endpoint.
+
+Multiplayer reconnect tokens are single-use 256-bit credentials. A successful reconnect rotates the token and returns the replacement; the previous value immediately stops working. Guest display names are labels only and never identify or authenticate an account.
+
+The matchmaking queue is held in backend memory and is shared only by requests handled by the same running server process. Run one backend instance for matchmaking; queued searches are cleared when that process restarts. Rooms, invitations, and game state are stored in the database. Supporting matchmaking across multiple backend instances requires shared queue coordination, which is not configured here.
 
 ## Engine source and licenses
 

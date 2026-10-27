@@ -27,6 +27,11 @@ export class AnalysisPanelComponent {
     return `${value}`;
   }
 
+  formatTime(value: number | null) {
+    if (value == null) return '--';
+    return value < 1000 ? `${value} ms` : `${(value / 1000).toFixed(2)} s`;
+  }
+
   sparklinePoints() {
     if (!this.evalHistory.length) {
       return '';

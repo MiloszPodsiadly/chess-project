@@ -26,7 +26,7 @@ export class MultiplayerPageComponent {
   constructor(public readonly multiplayer: MultiplayerService) {}
 
   connect() {
-    this.multiplayer.connect(this.username, this.reconnectToken);
+    this.multiplayer.connect(this.username, this.multiplayer.reconnectToken$.value || this.reconnectToken);
   }
 
   createRoom() {

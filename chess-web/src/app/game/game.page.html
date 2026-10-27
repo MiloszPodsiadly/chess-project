@@ -55,17 +55,17 @@
               <div class="setup-subtitle">{{ t('onlineSetupSubtitle') }}</div>
             </div>
           </div>
-          <div class="segmented tabs">
-            <button type="button" [class.active]="onlineView === 'public'" (click)="setOnlineView('public')">
+          <div class="segmented tabs arena-tabs" role="tablist" [attr.aria-label]="t('onlineSetup')" (keydown)="onOnlineTabKeydown($event)">
+            <button id="online-tab-public" type="button" role="tab" aria-controls="online-panel-public" [attr.aria-selected]="onlineView === 'public'" [attr.tabindex]="onlineView === 'public' ? 0 : -1" [class.active]="onlineView === 'public'" (click)="setOnlineView('public')">
               {{ t('publicTab') }}
             </button>
-            <button type="button" [class.active]="onlineView === 'create'" (click)="setOnlineView('create')">
+            <button id="online-tab-create" type="button" role="tab" aria-controls="online-panel-create" [attr.aria-selected]="onlineView === 'create'" [attr.tabindex]="onlineView === 'create' ? 0 : -1" [class.active]="onlineView === 'create'" (click)="setOnlineView('create')">
               {{ t('createTab') }}
             </button>
-            <button type="button" [class.active]="onlineView === 'join'" (click)="setOnlineView('join')">
+            <button id="online-tab-join" type="button" role="tab" aria-controls="online-panel-join" [attr.aria-selected]="onlineView === 'join'" [attr.tabindex]="onlineView === 'join' ? 0 : -1" [class.active]="onlineView === 'join'" (click)="setOnlineView('join')">
               {{ t('joinTab') }}
             </button>
-            <button type="button" [class.active]="onlineView === 'manage'" (click)="setOnlineView('manage')">
+            <button id="online-tab-manage" type="button" role="tab" aria-controls="online-panel-manage" [attr.aria-selected]="onlineView === 'manage'" [attr.tabindex]="onlineView === 'manage' ? 0 : -1" [class.active]="onlineView === 'manage'" (click)="setOnlineView('manage')">
               {{ t('manageTab') }}
             </button>
           </div>
@@ -76,11 +76,21 @@
           <div class="online-actions">
             <!-- auto-connect enabled; controls hidden -->
           </div>
-          <div class="room-list" *ngIf="onlineView === 'public'">
+          <div class="connection-banner" role="status" aria-live="polite" *ngIf="multiplayer.connectionState$ | async as connectionState">
+            <span>{{ connectionStatusLabel() }}</span>
+            <button type="button" class="ghost" *ngIf="connectionState === 'ERROR'" (click)="connectOnline()">
+              {{ t('retryConnection') }}
+            </button>
+          </div>
+          <div class="connection-banner" role="status" *ngIf="(multiplayer.queueState$ | async) === 'QUEUED'">
+            <span>{{ t('matchmakingQueued') }}</span>
+            <button type="button" class="ghost" (click)="multiplayer.cancelMatchmaking()">{{ t('cancelQueue') }}</button>
+          </div>
+          <div class="room-list" *ngIf="onlineView === 'public'" role="tabpanel" id="online-panel-public" aria-labelledby="online-tab-public" tabindex="0">
             <div class="room-list-header">
               <span>{{ t('publicRooms') }}</span>
-              <span class="room-status" *ngIf="multiplayer.connected$ | async as connected">
-                {{ connected ? t('connected') : t('disconnected') }}
+              <span class="room-status" *ngIf="multiplayer.connectionState$ | async">
+                {{ connectionStatusLabel() }}
               </span>
               <button type="button" class="ghost" (click)="onlineView = 'create'">{{ t('createRoom') }}</button>
             </div>
@@ -122,7 +132,7 @@
               {{ t('noPublicRooms') }}
             </div>
           </div>
-          <div class="room-list" *ngIf="onlineView === 'create'">
+          <div class="room-list" *ngIf="onlineView === 'create'" role="tabpanel" id="online-panel-create" aria-labelledby="online-tab-create" tabindex="0">
             <label>
               {{ t('timeControl') }}
               <select [(ngModel)]="onlineTimeControl">
@@ -146,11 +156,11 @@
               <input type="text" [(ngModel)]="onlineRoomPassword" [placeholder]="t('roomPasswordPlaceholder')" />
             </label>
             <div class="online-actions">
-              <button type="button" class="primary" (click)="createOnlineRoom()">{{ t('createRoom') }}</button>
-              <button type="button" class="ghost" (click)="startOnlineMatchmaking()">{{ t('quickStart') }}</button>
+              <button type="button" class="primary arena-button arena-button--primary" (click)="createOnlineRoom()">{{ t('createRoom') }}</button>
+              <button type="button" class="ghost arena-button arena-button--secondary" (click)="startOnlineMatchmaking()" [disabled]="(multiplayer.queueState$ | async) === 'QUEUED'">{{ t('quickStart') }}</button>
             </div>
           </div>
-          <div class="room-list" *ngIf="onlineView === 'join'">
+          <div class="room-list" *ngIf="onlineView === 'join'" role="tabpanel" id="online-panel-join" aria-labelledby="online-tab-join" tabindex="0">
             <label>
               {{ t('roomCode') }}
               <input type="text" [(ngModel)]="onlineRoomCode" [placeholder]="t('roomCodePlaceholder')" />
@@ -160,30 +170,30 @@
               <input type="text" [(ngModel)]="onlineJoinPassword" [placeholder]="t('joinPasswordPlaceholder')" />
             </label>
             <div class="online-actions">
-              <button type="button" class="primary" (click)="joinOnlineRoom()">{{ t('joinRoom') }}</button>
+              <button type="button" class="primary arena-button arena-button--primary" (click)="joinOnlineRoom()">{{ t('joinRoom') }}</button>
             </div>
           </div>
-          <div class="invite-box" *ngIf="onlineView === 'manage' && (multiplayer.roomCode$ | async) as createdCode">
+          <div class="invite-box" *ngIf="onlineView === 'manage' && (multiplayer.roomCode$ | async) as createdCode" role="tabpanel" id="online-panel-manage" aria-labelledby="online-tab-manage" tabindex="0">
             <div class="invite-header">
               <div class="invite-title">{{ t('inviteCreated') }}</div>
               <div class="invite-actions">
                 <button
                   type="button"
-                  class="primary"
+                  class="primary arena-button arena-button--primary"
                   *ngIf="isHostInRoom() && hasPendingPlayer()"
                   (click)="startRoomGame(createdCode)"
                 >
                   {{ t('startGame') }}
                 </button>
                 <button
-                  class="ghost"
+                  class="ghost arena-button arena-button--secondary"
                   *ngIf="isHostInRoom() && !hasPendingPlayer()"
                   disabled
                 >
                   {{ t('waitingForPlayer') }}
                 </button>
                 <button
-                  class="ghost"
+                  class="ghost arena-button arena-button--secondary"
                   *ngIf="isHostInRoom()"
                   (click)="multiplayer.deleteRoom(createdCode)"
                 >
@@ -208,18 +218,18 @@
                 <button
                   class="ghost"
                   *ngIf="canKickParticipant(participant)"
-                  (click)="multiplayer.kickPlayer(createdCode, participant.username || '')"
+                  (click)="multiplayer.kickPlayer(createdCode, participant.userId)"
                 >
                   {{ t('removePlayer') }}
                 </button>
               </div>
             </div>
           </div>
-          <div class="invite-box" *ngIf="onlineView === 'manage' && hasActiveRoom() && !(multiplayer.roomCode$ | async)">
+          <div class="invite-box" *ngIf="onlineView === 'manage' && hasActiveRoom() && !(multiplayer.roomCode$ | async)" role="tabpanel" id="online-panel-manage" aria-labelledby="online-tab-manage" tabindex="0">
             <div class="invite-header">
               <div class="invite-title">{{ t('yourRoom') }}</div>
               <div class="invite-actions">
-                <button class="ghost" (click)="multiplayer.leaveRoom()">{{ t('leaveRoom') }}</button>
+                <button class="ghost arena-button arena-button--secondary" (click)="multiplayer.leaveRoom()">{{ t('leaveRoom') }}</button>
               </div>
             </div>
             <div class="invite-meta">
@@ -239,7 +249,7 @@
               </div>
             </div>
           </div>
-          <div class="invite-box" *ngIf="onlineView === 'manage' && !hasActiveRoom()">
+          <div class="invite-box" *ngIf="onlineView === 'manage' && !hasActiveRoom()" role="tabpanel" id="online-panel-manage" aria-labelledby="online-tab-manage" tabindex="0">
             <div class="invite-title">{{ t('noActiveRoomTitle') }}</div>
             <div class="invite-meta">{{ t('noActiveRoomSubtitle') }}</div>
           </div>
@@ -320,6 +330,20 @@
         </label>
         <p *ngIf="botExecution === 'browser' && (analysis.status$ | async) === 'loading'">{{ t('engineLoading') }}</p>
         <p *ngIf="botExecution === 'browser' && (analysis.status$ | async) as analysisStatus">{{ analysisStatus !== 'idle' && analysisStatus !== 'ready' && analysisStatus !== 'loading' ? analysisStatus : '' }}</p>
+        <p class="engine-config-note" *ngIf="botExecution === 'server' && serverGame">
+          <ng-container *ngIf="serverGame.engineElo != null">
+            {{ serverGame.engineMode === 'TRAINING'
+              ? (lang === 'pl' ? 'Żądany UCI_Elo' : 'Requested UCI_Elo')
+              : (lang === 'pl' ? 'Poziom początkujący' : 'Beginner setting') }}: {{ serverGame.engineElo }} ·
+          </ng-container>
+          <ng-container *ngIf="serverGame.engineMode === 'FULL_STRENGTH'">
+            {{ lang === 'pl' ? 'Siła bez limitu' : 'Unrestricted strength' }} ·
+          </ng-container>
+          {{ lang === 'pl' ? 'Budżet na ruch' : 'Budget per move' }}:
+          {{ (serverGame.engineTimeBudgetMs ?? 0) / 1000 }} s.
+          {{ lang === 'pl' ? 'Głębokość i faktyczny czas są w panelu analizy; siła gry nie jest zmierzona.'
+            : 'Depth and actual search time appear in the analysis panel; playing strength is not measured.' }}
+        </p>
         <app-analysis-panel [evalHistory]="evalHistory" />
       </div>
 
@@ -368,16 +392,28 @@
             </div>
           </ng-container>
         </div>
+        <div class="connection-banner" role="status" aria-live="polite" *ngIf="multiplayer.connectionState$ | async as connectionState">
+          <span *ngIf="connectionState !== 'READY'">{{ connectionStatusLabel() }}</span>
+          <button type="button" class="ghost" *ngIf="connectionState === 'ERROR'" (click)="connectOnline()">
+            {{ t('retryConnection') }}
+          </button>
+        </div>
+        <div class="connection-banner" role="status" aria-live="polite" *ngIf="multiplayer.opponentDisconnected$ | async">
+          {{ t('opponentDisconnected') }}
+        </div>
+        <div class="connection-banner" role="status" *ngIf="!(multiplayer.opponentDisconnected$ | async)">
+          {{ t('opponentConnected') }}
+        </div>
         <div class="online-actions">
           <button
-            class="ghost"
+            class="ghost arena-button arena-button--secondary"
             *ngIf="multiplayer.gameState$ | async as game"
             (click)="multiplayer.resign(game.gameId)"
           >
             {{ t('resign') }}
           </button>
           <button
-            class="ghost"
+            class="ghost arena-button arena-button--secondary"
             *ngIf="multiplayer.gameState$ | async as game"
             (click)="multiplayer.offerDraw(game.gameId)"
           >
@@ -410,13 +446,28 @@
               [placeholder]="t('chatPlaceholder')"
               (keyup.enter)="sendChatMessage()"
             />
-            <button class="primary" (click)="sendChatMessage()">{{ t('send') }}</button>
+            <button class="primary arena-button arena-button--primary" (click)="sendChatMessage()">{{ t('send') }}</button>
           </div>
         </ng-container>
         <ng-template #chatPreview>
-          <div class="preview-box">
-            <img class="preview-image" src="/assets/cartoon/batalla-piezas-de-ajedrez-en-castillo_By_DG-RA.svg" alt="Chess room preview" />
-          </div>
+          <ng-container *ngIf="multiplayer.matchFound$ | async; else connectionPreview">
+            <div class="preview-box"><app-chess-arena-animation [lang]="lang" [state]="chessArenaState()" /></div>
+          </ng-container>
+          <ng-template #connectionPreview>
+            <ng-container *ngIf="multiplayer.connectionState$ | async as connectionState">
+              <ng-container *ngIf="connectionState === 'RECONNECTING' || connectionState === 'RECOVERING_GAME'; else activeOrLobbyPreview">
+                <div class="preview-box"><app-chess-arena-animation [lang]="lang" state="RECONNECTING" /></div>
+              </ng-container>
+              <ng-template #activeOrLobbyPreview>
+                <ng-container *ngIf="multiplayer.gameState$ | async; else lobbyPreview">
+                  <div class="empty-chat-state">{{ t('chatSubtitleEmpty') }}</div>
+                </ng-container>
+              </ng-template>
+              <ng-template #lobbyPreview>
+                <div class="preview-box"><app-chess-arena-animation [lang]="lang" [state]="chessArenaState()" /></div>
+              </ng-template>
+            </ng-container>
+          </ng-template>
         </ng-template>
       </div>
     </section>
@@ -439,19 +490,17 @@
   </div>
 </div>
 
-<ng-container *ngIf="multiplayer.gameState$ | async as mpGame">
-  <div class="promotion-overlay" *ngIf="mpGame.result && mpGame.result !== 'ONGOING'">
-    <div
-      class="promotion-modal result-modal"
-      [class.result-win]="multiplayerResultClass() === 'win'"
-      [class.result-loss]="multiplayerResultClass() === 'loss'"
-      [class.result-draw]="multiplayerResultClass() === 'draw'"
-    >
-      <h3>{{ multiplayerResultTitle() }}</h3>
-      <p>{{ multiplayerEndReason() }}</p>
-      <div class="result-actions">
-        <button class="promo" (click)="multiplayer.leaveRoom()">{{ t('backToLobby') }}</button>
-      </div>
+<ng-container *ngIf="multiplayerOutcome() as outcome">
+  <div class="promotion-overlay">
+    <div class="multiplayer-result-dialog arena-dialog" role="dialog" aria-modal="true" aria-labelledby="multiplayer-result-title">
+      <app-game-result-panel
+        [outcome]="outcome"
+        [lang]="lang"
+        mode="multiplayer"
+        [showMeta]="false"
+        headingId="multiplayer-result-title"
+        (playAgain)="multiplayer.leaveRoom()"
+      />
     </div>
   </div>
 </ng-container>

@@ -18,10 +18,14 @@ describe('EngineAnalysisService', () => {
     expect(analysis.evaluation$.value).toBe('-0.80');
     expect(analysis.completedEvaluation$.value).toEqual({ fen, value: '-0.80' });
     expect(analysis.external$.value).toBe(true);
+    expect(analysis.depth$.value).toBe(12);
+    expect(analysis.timeMillis$.value).toBe(100);
+    expect(analysis.nps$.value).toBe(1000);
 
     analysis.useLocalAnalysis();
     expect(analysis.external$.value).toBe(false);
     expect(analysis.evaluation$.value).toBe('—');
     expect(analysis.bestMove$.value).toBeNull();
+    expect(analysis.timeMillis$.value).toBeNull();
   });
 });

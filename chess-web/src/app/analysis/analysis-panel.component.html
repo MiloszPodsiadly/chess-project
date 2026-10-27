@@ -39,6 +39,10 @@
         <span class="label">NPS</span>
         <span class="value">{{ formatCount(analysis.nps$ | async) }}</span>
       </div>
+      <div class="metric">
+        <span class="label">Search time</span>
+        <span class="value">{{ formatTime(analysis.timeMillis$ | async) }}</span>
+      </div>
     </div>
 
     <svg *ngIf="evalHistory.length > 1" class="evaluation-history" viewBox="0 0 220 60"
