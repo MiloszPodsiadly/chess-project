@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { HomePageComponent } from './home/home.page';
+import { MultiplayerRedirectComponent } from './multiplayer/multiplayer-redirect.component';
 
 export const routes: Routes = [
   { path: '', component: HomePageComponent },
@@ -9,6 +10,7 @@ export const routes: Routes = [
   },
   {
     path: 'multiplayer',
-    loadComponent: () => import('./multiplayer/multiplayer.page').then((module) => module.MultiplayerPageComponent)
+    component: MultiplayerRedirectComponent,
+    pathMatch: 'full'
   }
 ];

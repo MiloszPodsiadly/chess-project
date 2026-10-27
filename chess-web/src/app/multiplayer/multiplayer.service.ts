@@ -46,7 +46,8 @@ export class MultiplayerService {
   private queueSubscription: StompSubscription | null = null;
   private lobbySubscription: StompSubscription | null = null;
   private connectionUsername: string | null = null;
-  private currentReconnectToken: string | null = null;
+  private pendingRoomJoinCode: string | null = null;
+  private currentReconnectToken: string | null = this.readSessionValue('onlineReconnect');
   private currentRoomReconnectToken: string | null = this.readSessionValue('roomReconnectToken');
   private reconnectAttempts = 0;
   private helloAckRetries = 0;
@@ -67,7 +68,6 @@ export class MultiplayerService {
   readonly roomCode$ = new BehaviorSubject<string | null>(null);
   readonly gameState$ = new BehaviorSubject<GameStateSyncDto | null>(null);
   readonly lastError$ = new BehaviorSubject<string | null>(null);
-  readonly reconnectToken$ = new BehaviorSubject<string | null>(null);
   readonly timeControl$ = new BehaviorSubject<TimeControlType | null>(null);
   readonly yourColor$ = new BehaviorSubject<'WHITE' | 'BLACK' | null>(null);
   readonly publicRooms$ = new BehaviorSubject<PublicRoomDto[]>([]);
@@ -80,12 +80,9 @@ export class MultiplayerService {
   readonly sessionUserId$ = new BehaviorSubject<number | null>(null);
   readonly roomParticipants$ = new BehaviorSubject<RoomParticipantDto[]>([]);
 
-  connect(username?: string, reconnectToken?: string) {
+  connect(username?: string) {
     if (username !== undefined) {
       this.connectionUsername = username ?? null;
-    }
-    if (reconnectToken) {
-      this.currentReconnectToken = reconnectToken;
     }
     if (this.client && this.client.active) {
       return;
@@ -157,10 +154,18 @@ export class MultiplayerService {
   }
 
   joinRoom(roomCode: string, password?: string | null, inviteToken?: string | null) {
-    this.send('joinRoom', { roomCode, password: password ?? null, inviteToken: inviteToken ?? null });
-    if (roomCode) {
-      this.setActiveRoom(roomCode);
+    const normalized = roomCode?.trim()?.toUpperCase();
+    if (!normalized) return;
+    const activeRoom = this.activeRoomCode$.value;
+    if (activeRoom && activeRoom !== normalized) {
+      this.lastError$.next('already_in_room');
+      return;
     }
+    this.pendingRoomJoinCode = normalized;
+    // Subscribe before publishing joinRoom so the first participant broadcast cannot race
+    // ahead of the new client's room-topic subscription.
+    if (!activeRoom) this.subscribeRoomTopic(normalized);
+    this.send('joinRoom', { roomCode: normalized, password: password ?? null, inviteToken: inviteToken ?? null });
   }
 
   queueMatchmaking(timeControlType: TimeControlType) {
@@ -293,6 +298,7 @@ export class MultiplayerService {
   }
 
   disconnect() {
+    this.clearMatchFound();
     this.manualDisconnect = true;
     this.clearHelloAckTimeout();
     this.awaitingHelloAck = false;
@@ -353,14 +359,24 @@ export class MultiplayerService {
       case 'roomRecovery': {
         const credential = event.payload as RoomRecoveryCredential;
         if (credential?.roomCode && credential.reconnectToken) {
+          this.pendingRoomJoinCode = null;
           this.setActiveRoom(credential.roomCode);
           this.setRoomReconnectToken(credential.reconnectToken);
+          this.roomHistory(credential.roomCode);
+          this.roomParticipants(credential.roomCode);
         }
         break;
       }
-      case 'roomJoinFailed':
+      case 'roomJoinFailed': {
+        const pendingRoom = this.pendingRoomJoinCode;
+        if (pendingRoom && this.activeRoomCode$.value !== pendingRoom
+            && this.roomSubscriptionCode === pendingRoom) {
+          this.unsubscribeRoomTopic();
+        }
+        this.pendingRoomJoinCode = null;
         this.lastError$.next(String(event.payload ?? 'room_join_failed'));
         break;
+      }
       case 'helloAck':
         this.clearHelloAckTimeout();
         this.awaitingHelloAck = false;
@@ -372,8 +388,7 @@ export class MultiplayerService {
           }
           this.sessionUserId$.next(ack.userId ?? null);
           if (ack.reconnectToken) {
-            this.currentReconnectToken = ack.reconnectToken;
-            this.reconnectToken$.next(ack.reconnectToken);
+            this.setReconnectToken(ack.reconnectToken);
           }
           if (ack.roomReconnectToken) {
             this.setRoomReconnectToken(ack.roomReconnectToken);
@@ -397,6 +412,16 @@ export class MultiplayerService {
         this.awaitingHelloAck = false;
         this.ready$.next(false);
         this.connectionState$.next('ERROR');
+        if (event.payload === 'invalid_reconnect_token') {
+          this.setReconnectToken(null);
+          this.awaitingRecoverySnapshot = false;
+        }
+        if (event.payload === 'invalid_room_reconnect_token') {
+          this.setRoomReconnectToken(null);
+          this.writeSessionValue('roomRecoveryRoomCode', null);
+          this.activeRoomCode$.next(null);
+          this.roomCode$.next(null);
+        }
         this.lastError$.next(String(event.payload ?? 'hello_failed'));
         this.stopAfterAuthenticationFailure();
         break;
@@ -520,8 +545,7 @@ export class MultiplayerService {
     const current = this.gameState$.value;
     if (current?.gameId === event.gameId) {
       if (!this.currentReconnectToken && event.reconnectToken) {
-        this.currentReconnectToken = event.reconnectToken;
-        this.reconnectToken$.next(event.reconnectToken);
+        this.setReconnectToken(event.reconnectToken);
       }
       this.subscribeGameTopic(event.gameId);
       return;
@@ -554,12 +578,11 @@ export class MultiplayerService {
       this.ignoredGameIds.add(this.currentGameId);
     }
     this.currentGameId = event.gameId;
-    this.currentReconnectToken = event.reconnectToken;
+    this.setReconnectToken(event.reconnectToken ?? null);
     this.subscribeGameTopic(event.gameId);
     this.queueState$.next('IDLE');
     this.opponentDisconnected$.next(false);
     this.roomCode$.next(null);
-    this.reconnectToken$.next(event.reconnectToken);
     this.timeControl$.next(event.timeControlType ?? null);
     this.yourColor$.next(event.yourColor ?? null);
     this.drawOffer$.next(false);
@@ -799,7 +822,7 @@ export class MultiplayerService {
       && current.whiteTimeLeftMs === event.whiteTimeLeftMs
       && current.blackTimeLeftMs === event.blackTimeLeftMs
       && (current.result !== 'ONGOING' || !current.lastMoveAt || !event.lastMoveAt
-        || current.lastMoveAt === event.lastMoveAt);
+        || this.sameInstant(current.lastMoveAt, event.lastMoveAt));
   }
 
   private sameMove(left: MoveAcceptedEvent['move'], right: MoveAcceptedEvent['move']): boolean {
@@ -820,7 +843,14 @@ export class MultiplayerService {
     return this.samePositionAndHistory(left, right)
       && left.whiteTimeLeftMs === right.whiteTimeLeftMs
       && left.blackTimeLeftMs === right.blackTimeLeftMs
-      && left.lastMoveAt === right.lastMoveAt;
+      && this.sameInstant(left.lastMoveAt, right.lastMoveAt);
+  }
+
+  private sameInstant(left: string | null | undefined, right: string | null | undefined): boolean {
+    if (left == null || right == null) return left === right;
+    const leftMillis = Date.parse(left);
+    const rightMillis = Date.parse(right);
+    return Number.isFinite(leftMillis) && leftMillis === rightMillis;
   }
 
   private isMoveTerminalReason(reason: GameStateSyncDto['endReason']): boolean {
@@ -839,7 +869,7 @@ export class MultiplayerService {
       && left.endReason === right.endReason
       && left.whiteTimeLeftMs === right.whiteTimeLeftMs
       && left.blackTimeLeftMs === right.blackTimeLeftMs
-      && left.lastMoveAt === right.lastMoveAt
+      && this.sameInstant(left.lastMoveAt, right.lastMoveAt)
       && left.timeControlType === right.timeControlType
       && left.roomCode === right.roomCode
       && this.samePositionAndHistory(left, right);
@@ -1040,6 +1070,11 @@ export class MultiplayerService {
     this.writeSessionValue('roomReconnectToken', token);
   }
 
+  private setReconnectToken(token: string | null) {
+    this.currentReconnectToken = token;
+    this.writeSessionValue('onlineReconnect', token);
+  }
+
   private scheduleHelloAckTimeout() {
     this.clearHelloAckTimeout();
     this.helloAckTimer = setTimeout(() => {
@@ -1111,6 +1146,7 @@ export class MultiplayerService {
 
     try {
       const replay = new Chess();
+      let doublePawnPushTarget: string | null = null;
       for (const move of state.moves) {
         if (!move || !/^[a-h][1-8]$/.test(move.from) || !/^[a-h][1-8]$/.test(move.to)
             || !['WHITE', 'BLACK'].includes(move.playerColor)
@@ -1118,6 +1154,10 @@ export class MultiplayerService {
             || (move.promotion != null && !['q', 'r', 'b', 'n'].includes(move.promotion.toLowerCase()))) {
           return false;
         }
+        const movingPiece = replay.get(move.from as Square);
+        const rankDistance = Number(move.to[1]) - Number(move.from[1]);
+        doublePawnPushTarget = movingPiece?.type === 'p' && Math.abs(rankDistance) === 2
+          ? `${move.from[0]}${(Number(move.from[1]) + Number(move.to[1])) / 2}` : null;
         replay.move({
           from: move.from as Square,
           to: move.to as Square,
@@ -1130,7 +1170,7 @@ export class MultiplayerService {
       return canonicalFen.length === 6 && forcedEnPassantFen.length === 6 && expectedFen.length === 6
         && state.sideToMove === (replay.turn() === 'w' ? 'WHITE' : 'BLACK')
         && [0, 1, 2, 4, 5].every((index) => canonicalFen[index] === expectedFen[index])
-        && [canonicalFen[3], forcedEnPassantFen[3]].includes(expectedFen[3])
+        && [canonicalFen[3], forcedEnPassantFen[3], doublePawnPushTarget].includes(expectedFen[3])
         && this.isValidSnapshotOutcome(state, replay, allowPendingMoveTerminal);
     } catch {
       return false;

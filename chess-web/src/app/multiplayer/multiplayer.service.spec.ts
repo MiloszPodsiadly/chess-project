@@ -209,6 +209,37 @@ describe('multiplayer event reconciliation', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('subscribes to the room topic before requesting to join so the first roster event is received', () => {
+    window.sessionStorage.removeItem('roomRecoveryRoomCode');
+    window.sessionStorage.removeItem('roomReconnectToken');
+    const service = new MultiplayerService();
+    const order: string[] = [];
+    vi.spyOn(service as any, 'subscribeRoomTopic').mockImplementation(() => order.push('subscribe'));
+    vi.spyOn(service as any, 'roomHistory').mockImplementation(() => order.push('history'));
+    vi.spyOn(service as any, 'roomParticipants').mockImplementation(() => order.push('participants'));
+    vi.spyOn(service as any, 'send').mockImplementation((...args: unknown[]) => { order.push(String(args[0])); });
+
+    service.joinRoom(' ab12cd ', ' secret ');
+
+    expect(order).toEqual(['subscribe', 'joinRoom']);
+    expect(service.activeRoomCode$.value).toBeNull();
+  });
+
+  it('clears pending join state when the server rejects a join', () => {
+    window.sessionStorage.removeItem('roomRecoveryRoomCode');
+    window.sessionStorage.removeItem('roomReconnectToken');
+    const service = new MultiplayerService();
+    vi.spyOn(service as any, 'send').mockImplementation(() => undefined);
+    service.joinRoom('ROOM1');
+
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'roomJoinFailed', payload: 'room_full' }) });
+
+    expect(service.activeRoomCode$.value).toBeNull();
+    expect(service.roomCode$.value).toBeNull();
+    expect(service.lastError$.value).toBe('room_full');
+    expect((service as any).pendingRoomJoinCode).toBeNull();
+  });
+
   it('cleans up a closed room once and keeps the reason for the user', () => {
     const service = new MultiplayerService();
     service.activeRoomCode$.next('ROOM1');
@@ -303,14 +334,87 @@ describe('multiplayer event reconciliation', () => {
     }
   });
 
+  it('keeps game recovery credentials in service storage and clears an expired token', () => {
+    window.sessionStorage.removeItem('onlineReconnect');
+    const service = new MultiplayerService();
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'helloAck', payload: {
+      username: 'Player', userId: 7, reconnectToken: 'private-recovery-token'
+    } }) });
+
+    expect((service as any).currentReconnectToken).toBe('private-recovery-token');
+    expect(window.sessionStorage.getItem('onlineReconnect')).toBe('private-recovery-token');
+    expect('reconnectToken$' in service).toBe(false);
+
+    const restoredService = new MultiplayerService();
+    expect((restoredService as any).currentReconnectToken).toBe('private-recovery-token');
+    (restoredService as any).handleMessage({ body: JSON.stringify({
+      type: 'helloFailed', payload: 'invalid_reconnect_token'
+    }) });
+
+    expect((restoredService as any).currentReconnectToken).toBeNull();
+    expect(window.sessionStorage.getItem('onlineReconnect')).toBeNull();
+    expect(restoredService.lastError$.value).toBe('invalid_reconnect_token');
+  });
+
+  it('clears an expired private-room recovery credential without displaying it', () => {
+    window.sessionStorage.setItem('roomReconnectToken', 'expired-room-token');
+    window.sessionStorage.setItem('roomRecoveryRoomCode', 'PRIV01');
+    const service = new MultiplayerService();
+
+    (service as any).handleMessage({ body: JSON.stringify({
+      type: 'helloFailed', payload: 'invalid_room_reconnect_token'
+    }) });
+
+    expect((service as any).currentRoomReconnectToken).toBeNull();
+    expect(service.activeRoomCode$.value).toBeNull();
+    expect(window.sessionStorage.getItem('roomReconnectToken')).toBeNull();
+    expect(window.sessionStorage.getItem('roomRecoveryRoomCode')).toBeNull();
+    expect(service.lastError$.value).toBe('invalid_room_reconnect_token');
+  });
+
   it('accepts chess.js and backend en-passant notation for the current position', () => {
     const service = new MultiplayerService();
+    const firstDoublePush = replayMoves(['e4']);
+    const backendFen = firstDoublePush.fen.split(' ');
+    backendFen[3] = 'e3';
+    expect((service as any).isValidGameSnapshot(snapshotFor(firstDoublePush, {
+      fen: backendFen.join(' ')
+    }))).toBe(true);
+
     const available = replayMoves(['e4', 'a6', 'e5', 'd5']);
     expect((service as any).isValidGameSnapshot(snapshotFor(available))).toBe(true);
 
     const noCaptureAvailable = replayMoves(['e4', 'a6']);
     const forcedEnPassant = new Chess(noCaptureAvailable.fen).fen({ forceEnpassantSquare: true });
     expect((service as any).isValidGameSnapshot(snapshotFor(noCaptureAvailable, { fen: forcedEnPassant }))).toBe(true);
+  });
+
+  it('accepts an initial server move and matches timestamps with different fractional precision', () => {
+    const service = new MultiplayerService();
+    const initial = {
+      gameId: 'precision-game', fen: new Chess().fen(), sideToMove: 'WHITE', yourColor: 'WHITE',
+      roomCode: 'ROOM1', timeControlType: 'RAPID', result: 'ONGOING', endReason: 'NONE',
+      moves: [], whiteTimeLeftMs: 600000, blackTimeLeftMs: 600000,
+      lastMoveAt: '2026-10-27T23:07:56.905398106Z', version: 0
+    } as any;
+    service.gameState$.next(initial);
+    const requestSync = vi.spyOn(service, 'requestSync');
+    const move = {
+      gameId: 'precision-game', move: { from: 'e2', to: 'e4', promotion: null, playerColor: 'WHITE' },
+      fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
+      sideToMove: 'BLACK', whiteTimeLeftMs: 599890, blackTimeLeftMs: 600000,
+      lastMoveAt: '2026-10-27T23:07:57.036549242Z', version: 1
+    } as any;
+
+    (service as any).handleMoveAccepted(move);
+    expect(service.gameState$.value).toMatchObject({ version: 1, sideToMove: 'BLACK', moves: [move.move] });
+    const accepted = service.gameState$.value!;
+    (service as any).handleGameStateSync({ state: {
+      ...accepted, lastMoveAt: '2026-10-27T23:07:57.036549Z'
+    } });
+
+    expect(service.gameState$.value).toBe(accepted);
+    expect(requestSync).not.toHaveBeenCalled();
   });
 
   it('rejects historical en-passant permission for a later unrelated position', () => {
@@ -427,7 +531,6 @@ describe('multiplayer event reconciliation', () => {
     } as any);
     (service as any).currentGameId = 'game-1';
     (service as any).currentReconnectToken = 'latest-token';
-    service.reconnectToken$.next('latest-token');
     const subscribe = vi.fn().mockReturnValue({ unsubscribe: vi.fn() });
     (service as any).client = { subscribe };
 
@@ -438,7 +541,7 @@ describe('multiplayer event reconciliation', () => {
 
     expect(service.gameState$.value?.moves).toEqual(current.moves);
     expect(service.gameState$.value?.fen).toBe(current.fen);
-    expect(service.reconnectToken$.value).toBe('latest-token');
+    expect((service as any).currentReconnectToken).toBe('latest-token');
     expect(subscribe).toHaveBeenCalledTimes(1);
   });
 
@@ -460,12 +563,15 @@ describe('multiplayer event reconciliation', () => {
       };
       (service as any).handleGameStarted(started);
       expect(service.matchFound$.value).toBe(true);
+      expect(service.gameState$.value?.gameId).toBe('game-match');
 
       vi.advanceTimersByTime(700);
       (service as any).handleGameStarted({ ...started, reconnectToken: 'stale-token' });
       expect(service.matchFound$.value).toBe(true);
       vi.advanceTimersByTime(900);
       expect(service.matchFound$.value).toBe(false);
+      service.disconnect();
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
     }
