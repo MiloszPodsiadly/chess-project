@@ -115,8 +115,8 @@
 }
 
 @keyframes piece-glow {
-  0%, 100% { filter: drop-shadow(0 3px 3px rgba(0,0,0,.55)); }
-  50% { filter: drop-shadow(0 3px 8px rgba(113,204,163,.45)); }
+  0%, 100% { opacity: .72; }
+  50% { opacity: .98; }
 }
 
 @keyframes square-pulse {
@@ -132,6 +132,12 @@
 @container (max-width: 360px) {
   .arena-caption { font-size: 11px; }
   .arena-scene { width: min(100%, 250px); }
+}
+
+@media (max-width: 600px) {
+  .arena-light,
+  .arena-piece { filter: none; }
+  .piece-bishop { animation: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

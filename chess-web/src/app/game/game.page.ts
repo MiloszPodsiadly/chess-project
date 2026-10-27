@@ -194,6 +194,19 @@ export class GamePageComponent {
       reconnecting: 'Server unavailable. Reconnecting...',
       recoveringGame: 'Restoring game state...',
       reconnectFailed: 'Reconnect failed. Try again.',
+      reconnectAckTimeout: 'The server did not confirm the reconnect. Retrying stopped; reconnect to restore the game.',
+      invalidReconnectToken: 'The reconnect token was rejected. Use the latest token.',
+      invalidGameSnapshot: 'The recovered board could not be verified. Keeping the current board while requesting a fresh snapshot.',
+      stateConflict: 'Game updates did not match. Checking the state with the server.',
+      snapshotRecoveryFailed: 'The server could not provide a verifiable game state. Keeping the current board; reconnect to try again.',
+      roomKicked: 'You were removed from the room.',
+      roomClosedHostDeleted: 'The host deleted the room.',
+      roomClosedHostLeft: 'The host left and closed the room.',
+      roomClosedHostDisconnected: 'The host disconnected and closed the room.',
+      roomClosedRoomExpired: 'The room expired.',
+      roomClosedNoParticipants: 'The room closed because no participants remained.',
+      roomClosed: 'Room was closed by the host.',
+      roomDeleted: 'Room deleted.',
       opponentConnected: 'Opponent connected',
       opponentDisconnected: 'Opponent disconnected. Waiting for them to reconnect...',
       matchmakingQueued: 'Searching for an opponent...',
@@ -362,6 +375,19 @@ export class GamePageComponent {
       reconnecting: 'Serwer niedostepny. Ponawianie polaczenia...',
       recoveringGame: 'Przywracanie stanu partii...',
       reconnectFailed: 'Nie udalo sie polaczyc ponownie. Sprobuj jeszcze raz.',
+      reconnectAckTimeout: 'Serwer nie potwierdzil ponownego polaczenia. Ponawianie zatrzymano; polacz sie ponownie, aby przywrocic partie.',
+      invalidReconnectToken: 'Serwer odrzucil token ponownego polaczenia. Uzyj najnowszego tokenu.',
+      invalidGameSnapshot: 'Nie mozna zweryfikowac odzyskanej planszy. Zachowano obecna plansze i poproszono o nowy stan.',
+      stateConflict: 'Aktualizacje partii sa niespojne. Sprawdzam stan na serwerze.',
+      snapshotRecoveryFailed: 'Serwer nie dostarczyl wiarygodnego stanu partii. Zachowano obecna plansze; polacz sie ponownie, aby sprobowac jeszcze raz.',
+      roomKicked: 'Usunieto Cie z pokoju.',
+      roomClosedHostDeleted: 'Gospodarz usunal pokoj.',
+      roomClosedHostLeft: 'Gospodarz opuscil pokoj i go zamknal.',
+      roomClosedHostDisconnected: 'Gospodarz utracil polaczenie i zamknal pokoj.',
+      roomClosedRoomExpired: 'Pokoj wygasl.',
+      roomClosedNoParticipants: 'Pokoj zamknieto, bo nie pozostali w nim uczestnicy.',
+      roomClosed: 'Gospodarz zamknal pokoj.',
+      roomDeleted: 'Pokoj usuniety.',
       opponentConnected: 'Przeciwnik polaczony',
       opponentDisconnected: 'Przeciwnik utracil polaczenie. Czekamy na jego powrot...',
       matchmakingQueued: 'Szukamy przeciwnika...',
@@ -1322,6 +1348,16 @@ export class GamePageComponent {
         return this.t('alreadyQueued');
       case 'reconnect_failed':
         return this.t('reconnectFailed');
+      case 'reconnect_ack_timeout':
+        return this.t('reconnectAckTimeout');
+      case 'invalid_reconnect_token':
+        return this.t('invalidReconnectToken');
+      case 'invalid_game_snapshot':
+        return this.t('invalidGameSnapshot');
+      case 'state_conflict':
+        return this.t('stateConflict');
+      case 'snapshot_recovery_failed':
+        return this.t('snapshotRecoveryFailed');
       case 'room_invite_failed':
       case 'roomInviteFailed':
         return 'Unable to create invite.';
@@ -1337,11 +1373,21 @@ export class GamePageComponent {
       case 'room_in_game':
         return 'Room already in game.';
       case 'roomKicked':
-        return 'You were removed from the room.';
+        return this.t('roomKicked');
+      case 'room_closed_host_deleted':
+        return this.t('roomClosedHostDeleted');
+      case 'room_closed_host_left':
+        return this.t('roomClosedHostLeft');
+      case 'room_closed_host_disconnected':
+        return this.t('roomClosedHostDisconnected');
+      case 'room_closed_room_expired':
+        return this.t('roomClosedRoomExpired');
+      case 'room_closed_no_active_participants':
+        return this.t('roomClosedNoParticipants');
       case 'roomClosed':
-        return 'Room was closed by the host.';
+        return this.t('roomClosed');
       case 'roomDeleted':
-        return 'Room deleted.';
+        return this.t('roomDeleted');
       case 'draw_offer_limit':
         return 'Draw offer limit reached.';
       case 'room_spectate_failed':

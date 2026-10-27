@@ -19,17 +19,26 @@ export class ChessArenaAnimationComponent implements AfterViewInit, OnChanges, O
   readonly Math = Math;
   private observer: IntersectionObserver | null = null;
   private motionPreference: MediaQueryList | null = null;
-  private visible = true;
+  private elementVisible = true;
+  private pageVisible = true;
   private reducedMotion = false;
 
   private readonly onMotionPreferenceChange = (event: MediaQueryListEvent) => {
     this.reducedMotion = event.matches;
     this.syncPausedState();
   };
+  private readonly onDocumentVisibilityChange = () => {
+    this.pageVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
+    this.syncPausedState();
+  };
 
   constructor(private readonly host: ElementRef<HTMLElement>) {}
 
   ngAfterViewInit(): void {
+    if (typeof document !== 'undefined') {
+      this.pageVisible = document.visibilityState === 'visible';
+      document.addEventListener('visibilitychange', this.onDocumentVisibilityChange);
+    }
     if (typeof window !== 'undefined' && window.matchMedia) {
       this.motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
       this.reducedMotion = this.motionPreference.matches;
@@ -37,7 +46,7 @@ export class ChessArenaAnimationComponent implements AfterViewInit, OnChanges, O
     }
     if (typeof IntersectionObserver !== 'undefined') {
       this.observer = new IntersectionObserver(entries => {
-        this.visible = entries.some(entry => entry.isIntersecting);
+        this.elementVisible = entries.some(entry => entry.isIntersecting);
         this.syncPausedState();
       }, { threshold: 0.05 });
       this.observer.observe(this.host.nativeElement);
@@ -52,6 +61,9 @@ export class ChessArenaAnimationComponent implements AfterViewInit, OnChanges, O
   ngOnDestroy(): void {
     this.observer?.disconnect();
     this.motionPreference?.removeEventListener('change', this.onMotionPreferenceChange);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onDocumentVisibilityChange);
+    }
   }
 
   get statusLabel(): string {
@@ -75,7 +87,7 @@ export class ChessArenaAnimationComponent implements AfterViewInit, OnChanges, O
   }
 
   private syncPausedState(): void {
-    const paused = !this.visible || this.reducedMotion || this.state === 'ACTIVE_GAME';
+    const paused = !this.elementVisible || !this.pageVisible || this.reducedMotion || this.state === 'ACTIVE_GAME';
     this.host.nativeElement.classList.toggle('is-paused', paused);
   }
 }
