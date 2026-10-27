@@ -11,55 +11,52 @@ public final class EngineConfigMapper {
 
     private EngineConfigMapper() {}
 
-    public static EloProfile forElo(int elo) {
-        if (elo < 200 || elo >= 1320) {
+    public static BeginnerProfile forBeginnerLevel(int level) {
+        if (level < 200 || level >= 1320) {
             throw new IllegalArgumentException("Beginner level must be 200..1319");
         }
-        if (elo <= 200) {
-            return new EloProfile(200, 20, 40, 1, Integer.MAX_VALUE, MoveSelection.RANDOM_LEGAL, 0.45, 0.35);
+        if (level <= 200) {
+            return new BeginnerProfile(200, 20, 40, 1, Integer.MAX_VALUE, MoveSelection.RANDOM_LEGAL, 0.45, 0.35);
         }
-        if (elo <= 400) {
-            return new EloProfile(400, 50, 50, 2, 8, MoveSelection.RANDOM_TOP_N, 0.30, 0.25);
+        if (level <= 400) {
+            return new BeginnerProfile(400, 50, 50, 2, 8, MoveSelection.RANDOM_TOP_N, 0.30, 0.25);
         }
-        if (elo <= 600) {
-            return new EloProfile(600, 80, 80, 3, 6, MoveSelection.RANDOM_TOP_N, 0.22, 0.18);
+        if (level <= 600) {
+            return new BeginnerProfile(600, 80, 80, 3, 6, MoveSelection.RANDOM_TOP_N, 0.22, 0.18);
         }
-        if (elo <= 800) {
-            return new EloProfile(800, 120, 120, 4, 5, MoveSelection.RANDOM_TOP_N, 0.16, 0.12);
+        if (level <= 800) {
+            return new BeginnerProfile(800, 120, 120, 4, 5, MoveSelection.RANDOM_TOP_N, 0.16, 0.12);
         }
-        if (elo <= 1000) {
-            return new EloProfile(1000, 180, 180, 6, 4, MoveSelection.RANDOM_TOP_N, 0.10, 0.08);
+        if (level <= 1000) {
+            return new BeginnerProfile(1000, 180, 180, 6, 4, MoveSelection.RANDOM_TOP_N, 0.10, 0.08);
         }
-        if (elo <= 1200) {
-            return new EloProfile(1200, 250, 250, 8, 3, MoveSelection.RANDOM_TOP_N, 0.06, 0.05);
+        if (level <= 1200) {
+            return new BeginnerProfile(1200, 250, 250, 8, 3, MoveSelection.RANDOM_TOP_N, 0.06, 0.05);
         }
-        if (elo <= 1400) {
-            return new EloProfile(1400, 350, 350, 10, 2, MoveSelection.TOP_N, 0.03, 0.03);
-        }
-        if (elo <= 1600) {
-            return new EloProfile(1600, 500, 500, 12, 2, MoveSelection.BEST_OR_TOP2, 0.02, 0.02);
-        }
-        if (elo <= 1800) {
-            return new EloProfile(1800, 800, 800, 15, 1, MoveSelection.BEST, 0.01, 0.01);
-        }
-        return new EloProfile(2000, 1200, 1200, 18, 1, MoveSelection.BEST, 0.005, 0.005);
+        return new BeginnerProfile(1319, 350, 350, 10, 2, MoveSelection.TOP_N, 0.03, 0.03);
     }
 
     public static EngineConfig toEngineConfig(int elo, Color engineColor) {
+        return toEngineConfig(elo, engineColor, EngineStrength.Preset.STRONG.budgetMs());
+    }
+
+    public static EngineConfig toEngineConfig(int elo, Color engineColor, long trainingTimeBudgetMs) {
         if (elo < 200 || elo > 3190) {
             throw new IllegalArgumentException("Engine target must be 200..3190");
         }
         if (elo >= 1320) {
-            long timeLimit = 1_000L;
-            return new EngineConfig(0, timeLimit, elo, engineColor, null,
-                    EngineStrength.training(elo, timeLimit));
+            if (trainingTimeBudgetMs < 1 || trainingTimeBudgetMs > EngineStrength.Preset.DEEP_CHALLENGE.budgetMs()) {
+                throw new IllegalArgumentException("Training search budget must be 1..60000 ms");
+            }
+            return new EngineConfig(0, trainingTimeBudgetMs, elo, engineColor, null,
+                    EngineStrength.training(elo, trainingTimeBudgetMs));
         }
-        EloProfile profile = forElo(elo);
+        BeginnerProfile profile = forBeginnerLevel(elo);
         long timeLimit = profile.pickTimeMillis(RNG.nextLong());
         SkillProfile skill = new SkillProfile(
                 profile.depthCap(),
                 timeLimit,
-                profile.elo() <= 1200 ? 80 : 20,
+                profile.bandMax() <= 1200 ? 80 : 20,
                 profile.blunderProb(),
                 profile.blunderProb()
         );

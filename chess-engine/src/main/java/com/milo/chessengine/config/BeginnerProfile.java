@@ -1,7 +1,8 @@
 package com.milo.chessengine.config;
 
-public record EloProfile(
-        int elo,
+/** Internal behavior tier for beginner play; this is not a measured rating. */
+public record BeginnerProfile(
+        int bandMax,
         long minTimeMillis,
         long maxTimeMillis,
         int depthCap,

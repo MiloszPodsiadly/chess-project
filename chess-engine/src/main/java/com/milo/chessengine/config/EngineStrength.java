@@ -47,6 +47,6 @@ public record EngineStrength(Mode mode, int elo, long timeBudgetMs, int depthCap
         }
         return elo >= 1320 ? training(elo, Math.max(1, timeBudgetMs))
                 : beginner(elo, Math.max(1, timeBudgetMs), Math.max(0, depthCap),
-                        Math.max(1, Math.min(5, EngineConfigMapper.forElo(elo).topMoves())));
+                        Math.max(1, Math.min(5, EngineConfigMapper.forBeginnerLevel(elo).topMoves())));
     }
 }

@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { EngineMoveResponseDto } from '../multiplayer/models';
 
 export type ServerEngineMode = 'BEGINNER' | 'TRAINING' | 'FULL_STRENGTH';
 export type StrengthPreset = 'STRONG' | 'EXPERT' | 'ULTIMATE' | 'DEEP_CHALLENGE';
@@ -17,6 +18,8 @@ export interface ServerEngineGame {
   engineMode?: ServerEngineMode | null;
   enginePreset?: StrengthPreset | null;
   engineElo?: number | null;
+  engineTimeBudgetMs?: number | null;
+  analysis?: EngineMoveResponseDto | null;
   playerColor: 'WHITE' | 'BLACK';
   engineExecutionId?: string | null;
 }
