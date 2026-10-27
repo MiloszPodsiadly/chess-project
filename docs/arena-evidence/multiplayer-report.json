@@ -1,0 +1,21 @@
+{
+  "runId": "MVRAXGT9",
+  "baseUrl": "http://localhost:4200",
+  "checks": {
+    "createRoomAppearsInManagement": true,
+    "hostCanDeleteRoom": true,
+    "deleteClearsManagementState": true,
+    "secondClientJoinsRoom": true,
+    "hostCanStartWhenOpponentJoins": true,
+    "bothClientsReceiveSameGame": true,
+    "playersReceiveOppositeColors": true,
+    "legalMoveSynchronizesToBothClients": true,
+    "opponentTurnOwnershipIsEnforced": true,
+    "secondLegalMoveSynchronizes": true,
+    "spectatorIsReadOnly": true,
+    "finishedGameClosesRoom": true
+  },
+  "roomCode": "4X7CFG",
+  "gameId": "8e0f15e2-6e68-49d7-b65c-bbdb2ca8d3dd",
+  "runtimeErrors": []
+}

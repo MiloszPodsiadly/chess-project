@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
+import com.milo.chessdomain.GameResult;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,6 +28,9 @@ public interface GameRepository extends JpaRepository<GameEntity, UUID> {
     List<GameEntity> findByWhitePlayerOrBlackPlayer(UserEntity white, UserEntity black);
 
     List<GameEntity> findByResult(com.milo.chessdomain.GameResult result);
+
+    @Query("select g.id from GameEntity g where g.result = :result")
+    List<UUID> findIdsByResult(@Param("result") GameResult result);
 
     Page<GameEntity> findByWhitePlayerOrBlackPlayer(UserEntity white, UserEntity black, Pageable pageable);
 }

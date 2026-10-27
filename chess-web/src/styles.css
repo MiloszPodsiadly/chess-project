@@ -1,6 +1,169 @@
+:root {
+  color-scheme: dark;
+  --arena-bg: #0b1217;
+  --arena-panel: rgba(8, 18, 24, 0.92);
+  --arena-card: rgba(7, 16, 20, 0.92);
+  --arena-card-border: rgba(45, 90, 110, 0.55);
+  --arena-control: #0c1720;
+  --arena-control-border: #355160;
+  --arena-text: #e6ebf2;
+  --arena-text-strong: #f3f7fb;
+  --arena-muted: #9ca8bb;
+  --arena-accent: #71cca3;
+  --arena-accent-strong: #1f9f76;
+  --arena-accent-ink: #0b1217;
+  --arena-focus: #ffd166;
+  --arena-danger: #ff9eaa;
+  --arena-radius-card: 18px;
+  --arena-radius-control: 10px;
+  --arena-shadow-card: 0 18px 40px rgba(5, 12, 18, 0.45);
+  --arena-space-1: 4px;
+  --arena-space-2: 8px;
+  --arena-space-3: 12px;
+  --arena-space-4: 16px;
+  --arena-space-5: 24px;
+  --arena-text-line: 1.5;
+  --arena-border-subtle: rgba(45, 90, 110, 0.38);
+  --arena-surface-raised: rgba(13, 23, 31, 0.9);
+  --arena-success: #8ff0b6;
+  --arena-warning: #f8b250;
+  --arena-page-background:
+    radial-gradient(1200px 600px at 10% 10%, rgba(40, 120, 140, 0.35), transparent 60%),
+    radial-gradient(900px 480px at 80% 0%, rgba(20, 90, 110, 0.35), transparent 55%),
+    var(--arena-bg);
+  --arena-font: "Space Grotesk", "Segoe UI", sans-serif;
+  font-family: var(--arena-font);
+  color: var(--arena-text);
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
-  background: #0b1217;
+  background: var(--arena-bg);
+}
+
+body {
+  min-width: 320px;
+  color: var(--arena-text);
+  font-family: var(--arena-font, "Space Grotesk", "Segoe UI", sans-serif);
+}
+
+.arena-card {
+  background: var(--arena-card);
+  border: 1px solid var(--arena-card-border);
+  border-radius: var(--arena-radius-card);
+  box-shadow: inset 0 0 0 1px rgba(12, 22, 28, 0.5);
+}
+
+.arena-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--arena-radius-control);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.arena-button--primary {
+  background: var(--arena-accent-strong);
+  color: var(--arena-accent-ink);
+}
+
+.arena-button--secondary {
+  background: transparent;
+  border-color: var(--arena-control-border);
+  color: var(--arena-text);
+}
+
+.arena-button--danger {
+  background: rgba(92, 35, 42, .72);
+  border-color: rgba(214, 95, 111, .6);
+  color: var(--arena-danger);
+}
+
+.arena-button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.arena-button:not(:disabled):hover {
+  border-color: var(--arena-accent);
+  filter: brightness(1.08);
+}
+
+.arena-field {
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1px solid var(--arena-control-border);
+  border-radius: var(--arena-radius-control);
+  background: var(--arena-control);
+  color: var(--arena-text-strong);
+  font: inherit;
+}
+
+.arena-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.arena-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--arena-control-border);
+  border-radius: 999px;
+  background: rgba(13, 23, 31, 0.9);
+  color: var(--arena-text);
+  font-size: 12px;
+}
+
+.arena-status {
+  color: var(--arena-muted);
+  font-size: 12px;
+}
+
+.arena-status--success { color: var(--arena-success); }
+.arena-status--warning { color: var(--arena-warning); }
+.arena-status--danger { color: var(--arena-danger); }
+
+.arena-dialog {
+  box-sizing: border-box;
+  width: min(520px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--arena-card-border);
+  border-radius: var(--arena-radius-card);
+  background: var(--arena-panel);
+  color: var(--arena-text);
+  box-shadow: var(--arena-shadow-card);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid var(--arena-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

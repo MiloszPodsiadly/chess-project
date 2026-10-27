@@ -10,5 +10,6 @@ public record MoveRejectedEvent(
         String fen,
         Color sideToMove,
         long whiteTimeLeftMs,
-        long blackTimeLeftMs
+        long blackTimeLeftMs,
+        Long version
 ) {}

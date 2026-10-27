@@ -1,13 +1,13 @@
-<section class="result-card" [class.victory]="outcome.perspective === 'WIN'" [class.compact]="dismissed" [attr.aria-label]="title">
+<section class="result-card" [class.victory]="outcome.perspective === 'WIN'" [class.compact]="dismissed" [class.multiplayer]="mode === 'multiplayer'" [attr.aria-label]="title">
   <div class="result-heading">
     <span class="result-symbol" aria-hidden="true">{{ outcome.perspective === 'WIN' ? '♛' : outcome.perspective === 'DRAW' ? '½' : '♟' }}</span>
-    <div><h2>{{ title }}</h2><p>{{ reason }}</p></div>
+    <div><h2 [id]="headingId">{{ title }}</h2><p>{{ reason }}</p></div>
     <strong class="score">{{ notation }}</strong>
   </div>
-  <div class="result-meta" *ngIf="!dismissed"><span>{{ opponent }}</span><span>{{ moveLabel }}: {{ outcome.moveCount }}</span></div>
+  <div class="result-meta" *ngIf="showMeta && !dismissed"><span *ngIf="mode === 'bot'">{{ opponent }}</span><span>{{ moveLabel }}: {{ outcome.moveCount }}</span></div>
   <div class="result-actions">
-    <button type="button" class="primary" (click)="playAgain.emit()">{{ playLabel }}</button>
-    <button type="button" class="secondary" *ngIf="!dismissed" (click)="review.emit()">{{ reviewLabel }}</button>
-    <button type="button" class="secondary" (click)="changeSetup.emit()">{{ changeLabel }}</button>
+    <button type="button" class="primary arena-button arena-button--primary" (click)="playAgain.emit()">{{ playLabel }}</button>
+    <button type="button" class="secondary arena-button arena-button--secondary" *ngIf="!dismissed" (click)="review.emit()">{{ reviewLabel }}</button>
+    <button type="button" class="secondary arena-button arena-button--secondary" *ngIf="mode === 'bot'" (click)="changeSetup.emit()">{{ changeLabel }}</button>
   </div>
 </section>

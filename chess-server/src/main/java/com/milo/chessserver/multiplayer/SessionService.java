@@ -9,6 +9,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Session ownership is process-local. Durable reconnect credentials survive a restart,
+ * but active-session coordination currently assumes a single server node.
+ */
 @Service
 public class SessionService {
 
@@ -23,31 +27,40 @@ public class SessionService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    public UserEntity registerSession(String sessionKey, String username) {
-        String finalName = (username == null || username.isBlank()) ? "guest-" + shortId() : username.trim();
-        UserEntity user = userRepository.findByUsername(finalName).orElseGet(() -> {
-            UserEntity guest = new UserEntity();
-            guest.setUsername(finalName);
-            guest.setEmail(finalName + "@guest.local");
-            guest.setPasswordHash(passwordEncoder.encode("guest"));
-            return userRepository.save(guest);
-        });
-        sessionToUser.put(sessionKey, user.getId());
-        userToSession.put(user.getId(), sessionKey);
+    public UserEntity registerGuestSession(String sessionKey, String requestedDisplayName) {
+        if (sessionKey == null || sessionKey.isBlank()) {
+            throw new IllegalArgumentException("WebSocket session is required");
+        }
+        String internalUsername = SecureTokenGenerator.guestUsername();
+        UserEntity user = new UserEntity();
+        user.setUsername(internalUsername);
+        user.setEmail(internalUsername + "@guest.local");
+        user.setPasswordHash(passwordEncoder.encode(SecureTokenGenerator.generate()));
+        user.setDisplayName(normalizeDisplayName(requestedDisplayName, internalUsername));
+        user.setGuest(true);
+        user = userRepository.save(user);
+        bindSession(sessionKey, user);
         return user;
     }
 
     public void bindReconnectUser(String sessionKey, UserEntity user) {
-        sessionToUser.put(sessionKey, user.getId());
-        userToSession.put(user.getId(), sessionKey);
+        if (sessionKey == null || sessionKey.isBlank() || user == null || user.getId() == null) {
+            throw new IllegalArgumentException("Session and reconnect user are required");
+        }
+        bindSession(sessionKey, user);
     }
 
-    public UserEntity getUser(String sessionKey) {
+    public synchronized UserEntity getUser(String sessionKey) {
+        if (sessionKey == null || sessionKey.isBlank()) return null;
         Long userId = sessionToUser.get(sessionKey);
-        if (userId == null) {
+        if (userId == null || !sessionKey.equals(userToSession.get(userId))) {
             return null;
         }
         return userRepository.findById(userId).orElse(null);
+    }
+
+    public boolean isCurrentSession(String sessionKey, Long userId) {
+        return sessionKey != null && userId != null && sessionKey.equals(userToSession.get(userId));
     }
 
     public void attachGame(Long userId, UUID gameId) {
@@ -66,15 +79,33 @@ public class SessionService {
         return userToSession.get(userId);
     }
 
-    public void clearSession(String sessionKey) {
+    public synchronized void clearSession(String sessionKey) {
+        if (sessionKey == null || sessionKey.isBlank()) return;
         Long userId = sessionToUser.remove(sessionKey);
-        if (userId != null) {
-            userToSession.remove(userId);
+        if (userId != null && userToSession.remove(userId, sessionKey)) {
             userToGame.remove(userId);
         }
     }
 
-    private String shortId() {
-        return UUID.randomUUID().toString().substring(0, 8);
+    private synchronized void bindSession(String sessionKey, UserEntity user) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("Persisted user identity is required");
+        }
+        Long previousUserId = sessionToUser.put(sessionKey, user.getId());
+        if (previousUserId != null && !previousUserId.equals(user.getId())) {
+            userToSession.remove(previousUserId, sessionKey);
+        }
+        userToSession.put(user.getId(), sessionKey);
+    }
+
+    private String normalizeDisplayName(String requested, String internalUsername) {
+        String candidate = requested == null ? "" : requested.trim();
+        String normalized = candidate.codePoints()
+                .filter(codePoint -> !Character.isISOControl(codePoint))
+                .limit(32)
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                .toString()
+                .trim();
+        return normalized.isBlank() ? "Guest-" + internalUsername.substring(internalUsername.length() - 6) : normalized;
     }
 }

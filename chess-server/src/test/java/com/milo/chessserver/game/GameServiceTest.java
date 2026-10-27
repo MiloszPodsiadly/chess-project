@@ -42,7 +42,7 @@ class GameServiceTest {
         game.setTimeControlType(TimeControlType.UNTIMED);
         game.setStartedAt(Instant.now());
 
-        when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
+        when(gameRepository.findLockedById(gameId)).thenReturn(Optional.of(game));
         when(gameRepository.save(any(GameEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(moveRepository.countByGameId(gameId)).thenReturn(0L);
         when(moveRepository.findFenAfterMoveByGameIdOrderByMoveNumberAsc(gameId)).thenReturn(List.of());
@@ -75,7 +75,7 @@ class GameServiceTest {
         game.setTimeControlType(TimeControlType.UNTIMED);
         game.setStartedAt(Instant.now());
 
-        when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
+        when(gameRepository.findLockedById(gameId)).thenReturn(Optional.of(game));
         when(moveRepository.findFenAfterMoveByGameIdOrderByMoveNumberAsc(gameId)).thenReturn(List.of());
 
         MoveDto move = new MoveDto("e2", "e5", null, Color.WHITE);

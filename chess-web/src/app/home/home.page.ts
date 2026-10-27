@@ -1,11 +1,11 @@
 import { Component } from '@angular/core';
-import { NgForOf } from '@angular/common';
 import { RouterModule } from '@angular/router';
+import { ChessArenaAnimationComponent } from '../game/chess-arena-animation/chess-arena-animation.component';
 
 @Component({
   selector: 'app-home-page',
   standalone: true,
-  imports: [RouterModule, NgForOf],
+  imports: [RouterModule, ChessArenaAnimationComponent],
   templateUrl: './home.page.html',
   styleUrl: './home.page.css'
 })
@@ -14,42 +14,50 @@ export class HomePageComponent {
 
   readonly translations = {
     en: {
-      name: 'Chess Arena',
       tagline: 'Play. Analyze. Improve.',
       playBot: 'Play vs Bot',
       playOnline: 'Play Online',
-      botDesc: 'Train with adjustable Elo',
-      onlineDesc: 'Lobby, matchmaking, reconnect',
-      tipsTitle: 'Quick tips',
-      tip1: 'Use bot mode to test openings',
-      tip2: 'Multiplayer supports reconnect',
-      tip3: 'Analysis panel shows PV lines',
-      heroTitle: 'Play chess like a pro',
+      botDesc: 'Set the engine strength',
+      onlineDesc: 'Matchmaking, rooms, reconnect',
+      primaryNavigation: 'Primary navigation',
+      homeLink: 'Chess Arena home',
+      gameModes: 'Game modes',
+      menuTitle: 'Choose a mode',
+      tipsTitle: 'A good place to start',
+      sidebarNote: 'A focused space for your next game.',
+      tip1: 'Analyze positions while you play',
+      tip2: 'Join matchmaking or create a room',
+      heroKicker: 'YOUR NEXT GAME',
+      heroTitle: 'Play with purpose.',
       heroCopy:
-        'Choose a mode, set your pace, and analyze every move with real-time evaluation. Built for competitive play.',
-      langLabel: 'Language'
+        'Train against Stockfish 19, study positions with built-in analysis, or find an opponent in online matchmaking.',
+      langLabel: 'Language',
+      welcomeSection: 'Choose how to play',
+      arenaLabel: 'Chess Arena illustration'
     },
     pl: {
-      name: 'Arena Szachowa',
-      tagline: 'Graj. Analizuj. Poprawiaj.',
+      tagline: 'Graj. Analizuj. Rozwijaj się.',
       playBot: 'Graj z botem',
       playOnline: 'Graj online',
-      botDesc: 'Trening z regulowanym Elo',
-      onlineDesc: 'Lobby, matchmaking, powrot',
-      tipsTitle: 'Szybkie wskazowki',
-      tip1: 'Uzyj bota, by testowac debiuty',
-      tip2: 'Multiplayer wspiera ponowne polaczenie',
-      tip3: 'Panel analizy pokazuje linie PV',
-      heroTitle: 'Graj w szachy jak zawodowiec',
+      botDesc: 'Dopasuj siłę silnika',
+      onlineDesc: 'Matchmaking, pokoje, powrót do gry',
+      primaryNavigation: 'Nawigacja główna',
+      homeLink: 'Strona główna Chess Arena',
+      gameModes: 'Tryby gry',
+      menuTitle: 'Wybierz tryb',
+      tipsTitle: 'Na dobry początek',
+      sidebarNote: 'Skup się na kolejnej partii.',
+      tip1: 'Analizuj pozycje w trakcie gry',
+      tip2: 'Dołącz do matchmakingu lub utwórz pokój',
+      heroKicker: 'TWOJA NASTĘPNA PARTIA',
+      heroTitle: 'Graj z pomysłem.',
       heroCopy:
-        'Wybierz tryb, ustaw tempo i analizuj kazdy ruch w czasie rzeczywistym. Stworzone do gry turniejowej.',
-      langLabel: 'Jezyk'
+        'Trenuj ze Stockfishem 19, analizuj pozycje w trakcie partii lub znajdź przeciwnika w trybie online.',
+      langLabel: 'Język',
+      welcomeSection: 'Wybierz sposób gry',
+      arenaLabel: 'Ilustracja Chess Arena'
     }
   } as const;
-
-  readonly squares = Array.from({ length: 64 }, (_, i) => ({
-    dark: (Math.floor(i / 8) + i) % 2 === 1
-  }));
 
   constructor() {
     const saved = this.safeLocalGet('lang');

@@ -13,7 +13,6 @@ import com.milo.chessserver.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.lang.reflect.Method;
 import java.time.Instant;
@@ -33,7 +32,7 @@ class MultiplayerEventPayloadTest {
         UserRepository userRepository = mock(UserRepository.class);
         GameService gameService = mock(GameService.class);
         ClockService clockService = new ClockService();
-        MatchmakingService matchmakingService = new MatchmakingService(new BCryptPasswordEncoder());
+        MatchmakingService matchmakingService = new MatchmakingService();
         RoomService roomService = mock(RoomService.class);
         SessionService sessionService = mock(SessionService.class);
         com.milo.chessengine.ChessEngine chessEngine = mock(com.milo.chessengine.ChessEngine.class);
@@ -98,7 +97,7 @@ class MultiplayerEventPayloadTest {
         UserRepository userRepository = mock(UserRepository.class);
         GameService gameService = mock(GameService.class);
         ClockService clockService = new ClockService();
-        MatchmakingService matchmakingService = new MatchmakingService(new BCryptPasswordEncoder());
+        MatchmakingService matchmakingService = new MatchmakingService();
         RoomService roomService = mock(RoomService.class);
         SessionService sessionService = mock(SessionService.class);
         com.milo.chessengine.ChessEngine chessEngine = mock(com.milo.chessengine.ChessEngine.class);

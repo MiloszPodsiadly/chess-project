@@ -40,7 +40,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String username = tokenService.extractUsername(token);
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                UserEntity userEntity = userRepository.findByUsername(username).orElse(null);
+                UserEntity userEntity = userRepository.findByUsernameAndGuestFalse(username).orElse(null);
                 if (userEntity != null && tokenService.isTokenValid(token, userEntity)) {
                     UserDetails principal = User.withUsername(userEntity.getUsername())
                             .password(userEntity.getPasswordHash())

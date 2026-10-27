@@ -1,6 +1,6 @@
 package com.milo.chessengine.bot;
 
-import com.milo.chessengine.config.EloProfile;
+import com.milo.chessengine.config.BeginnerProfile;
 import com.milo.chessengine.config.MoveSelection;
 import com.milo.chessdomain.EvalType;
 
@@ -15,7 +15,7 @@ public final class BotMoveStrategy {
 
     private BotMoveStrategy() {}
 
-    public static CandidateMove chooseMove(List<CandidateMove> candidates, EloProfile profile) {
+    public static CandidateMove chooseMove(List<CandidateMove> candidates, BeginnerProfile profile) {
         if (candidates == null || candidates.isEmpty()) {
             return null;
         }
@@ -73,7 +73,7 @@ public final class BotMoveStrategy {
         return candidate.score().value();
     }
 
-    private static List<CandidateMove> maybeMissMate(List<CandidateMove> top, EloProfile profile) {
+    private static List<CandidateMove> maybeMissMate(List<CandidateMove> top, BeginnerProfile profile) {
         if (top.size() <= 1) {
             return top;
         }

@@ -15,6 +15,12 @@ public class UserEntity {
     @Column(nullable = false, unique = true, length = 32)
     private String username;
 
+    @Column(name = "display_name", length = 32)
+    private String displayName;
+
+    @Column(name = "is_guest", nullable = false, columnDefinition = "boolean default false")
+    private boolean guest;
+
     @Column(nullable = false, unique = true, length = 128)
     private String email;
 
@@ -37,6 +43,22 @@ public class UserEntity {
 
     public String getUsername() {
         return username;
+    }
+
+    public String getDisplayName() {
+        return displayName == null || displayName.isBlank() ? username : displayName;
+    }
+
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
+    public boolean isGuest() {
+        return guest;
+    }
+
+    public void setGuest(boolean guest) {
+        this.guest = guest;
     }
 
     public void setUsername(String username) {

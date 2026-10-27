@@ -34,8 +34,17 @@ public class GamePlayerEntity {
     @Column(name = "rating_at_start", nullable = false)
     private int ratingAtStart;
 
-    @Column(name = "reconnect_token", nullable = false, length = 64)
+    @Column(name = "reconnect_token", nullable = false, unique = true, length = 64)
     private String reconnectToken;
+
+    @Column(name = "previous_reconnect_token_hash", unique = true, length = 64)
+    private String previousReconnectTokenHash;
+
+    @Column(name = "previous_reconnect_token_expires_at")
+    private Instant previousReconnectTokenExpiresAt;
+
+    @Column(name = "reconnect_ack_id", length = 36)
+    private String reconnectAckId;
 
     @Column(name = "last_seen_at", nullable = false)
     private Instant lastSeenAt = Instant.now();
@@ -93,6 +102,30 @@ public class GamePlayerEntity {
 
     public void setReconnectToken(String reconnectToken) {
         this.reconnectToken = reconnectToken;
+    }
+
+    public String getPreviousReconnectTokenHash() {
+        return previousReconnectTokenHash;
+    }
+
+    public void setPreviousReconnectTokenHash(String previousReconnectTokenHash) {
+        this.previousReconnectTokenHash = previousReconnectTokenHash;
+    }
+
+    public Instant getPreviousReconnectTokenExpiresAt() {
+        return previousReconnectTokenExpiresAt;
+    }
+
+    public void setPreviousReconnectTokenExpiresAt(Instant previousReconnectTokenExpiresAt) {
+        this.previousReconnectTokenExpiresAt = previousReconnectTokenExpiresAt;
+    }
+
+    public String getReconnectAckId() {
+        return reconnectAckId;
+    }
+
+    public void setReconnectAckId(String reconnectAckId) {
+        this.reconnectAckId = reconnectAckId;
     }
 
     public Instant getLastSeenAt() {

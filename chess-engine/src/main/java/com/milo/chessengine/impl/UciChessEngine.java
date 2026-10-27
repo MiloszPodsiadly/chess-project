@@ -15,7 +15,7 @@ import com.milo.chessengine.bot.CandidateMove;
 import com.milo.chessengine.config.EngineConfig;
 import com.milo.chessengine.config.EngineConfigMapper;
 import com.milo.chessengine.config.EngineStrength;
-import com.milo.chessengine.config.EloProfile;
+import com.milo.chessengine.config.BeginnerProfile;
 import com.milo.chessengine.config.MoveSelection;
 import com.milo.chessengine.core.EngineResult;
 import com.milo.chessengine.core.EvalScore;
@@ -202,8 +202,8 @@ public class UciChessEngine implements ChessEngine, AutoCloseable {
         Instant started = Instant.now();
         SearchRequest request = new SearchRequest(UUID.randomUUID(), position.fen(), processGeneration);
         EngineStrength strength = Objects.requireNonNull(config.strength(), "strength");
-        EloProfile profile = strength.mode() == EngineStrength.Mode.BEGINNER
-                ? EngineConfigMapper.forElo(strength.elo()) : null;
+        BeginnerProfile profile = strength.mode() == EngineStrength.Mode.BEGINNER
+                ? EngineConfigMapper.forBeginnerLevel(strength.elo()) : null;
         int multipvLimit = settings.defaultMultiPv() > 0 ? settings.defaultMultiPv() : 5;
         int multipv = Math.max(1, Math.min(strength.multiPv(), multipvLimit));
 
@@ -227,13 +227,7 @@ public class UciChessEngine implements ChessEngine, AutoCloseable {
 
         int depthCap = strength.depthCap();
         long moveTime = strength.timeBudgetMs();
-        if (moveTime > 0L) {
-            process.send("go movetime " + moveTime);
-        } else if (depthCap > 0) {
-            process.send("go depth " + depthCap);
-        } else {
-            process.send("go movetime 50");
-        }
+        process.send(searchCommand(strength));
         state = State.SEARCHING;
 
         SearchCollector collector = new SearchCollector(position.sideToMove(), depthCap, multipv);
@@ -312,7 +306,17 @@ public class UciChessEngine implements ChessEngine, AutoCloseable {
         );
     }
 
-    private CandidateMove chooseMove(Position position, EloProfile profile, SearchResult search) {
+    static String searchCommand(EngineStrength strength) {
+        if (strength.timeBudgetMs() > 0L) {
+            return "go movetime " + strength.timeBudgetMs();
+        }
+        if (strength.depthCap() > 0) {
+            return "go depth " + strength.depthCap();
+        }
+        return "go movetime 50";
+    }
+
+    private CandidateMove chooseMove(Position position, BeginnerProfile profile, SearchResult search) {
         if (profile.moveSelection() == MoveSelection.RANDOM_LEGAL) {
             List<CandidateMove> legal = generateLegalCandidates(position);
             CandidateMove choice = BotMoveStrategy.chooseMove(legal, profile);

@@ -1,7 +1,7 @@
 import { Component, DestroyRef, ChangeDetectorRef } from '@angular/core';
 import { AsyncPipe, NgForOf, NgIf, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { GameStateService } from './game-state.service';
+import { GameStateService, type MoveView } from './game-state.service';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { EngineAnalysisService } from '../analysis/engine-analysis.service';
@@ -11,13 +11,14 @@ import { GameControlsComponent } from './game-controls/game-controls.component';
 import { AnalysisPanelComponent } from '../analysis/analysis-panel.component';
 import { BotEngineService } from '../bot/bot-engine.service';
 import { EngineGameApiService, EngineSessionExpiredError, ServerEngineGame, ServerEngineMode, StrengthPreset } from '../bot/engine-game-api.service';
-import { Chess } from 'chess.js';
-import { ActivatedRoute } from '@angular/router';
-import { TimeControlType } from '../multiplayer/models';
+import { Chess, type Square } from 'chess.js';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import type { GameStateSyncDto, TimeControlType } from '../multiplayer/models';
 import { strengthCategory } from '../bot/strength-catalog';
-import { GameOutcome, serverOutcome } from './game-outcome';
+import { GameOutcome, multiplayerOutcome as toMultiplayerOutcome, serverOutcome } from './game-outcome';
 import { GameResultPanelComponent } from './game-result-panel/game-result-panel.component';
 import { BotSetupComponent } from './bot-setup/bot-setup.component';
+import { ChessArenaAnimationComponent, ChessArenaState } from './chess-arena-animation/chess-arena-animation.component';
 
 type PieceCode = string | null;
 type BotErrorScope = 'authentication' | 'configuration' | 'engine' | 'gameplay' | 'recovery';
@@ -25,7 +26,7 @@ type BotErrorScope = 'authentication' | 'configuration' | 'engine' | 'gameplay' 
 @Component({
   selector: 'app-game-page',
   standalone: true,
-  imports: [AsyncPipe, NgIf, NgForOf, DatePipe, FormsModule, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent, GameResultPanelComponent, BotSetupComponent],
+  imports: [AsyncPipe, NgIf, NgForOf, DatePipe, FormsModule, RouterLink, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent, GameResultPanelComponent, BotSetupComponent, ChessArenaAnimationComponent],
   templateUrl: './game.page.html',
   styleUrl: './game.page.css'
 })
@@ -101,21 +102,24 @@ export class GamePageComponent {
   chatMessage = '';
   onlineView: 'public' | 'create' | 'join' | 'manage' = 'public';
   private pendingOnlineAction: (() => void) | null = null;
-  private pendingOnlineTimer: number | null = null;
   showOnlineSetup = false;
   onlineUsername = '';
-  onlineReconnect = '';
   onlineTimeControl: TimeControlType = 'RAPID';
   onlineRoomCode = '';
   lang: 'en' | 'pl' = 'en';
-  multiplayerActive = false;
   pendingServerMove = false;
+  multiplayerHistoryMoves: MoveView[] = [];
+  multiplayerReviewedGameId: string | null = null;
   displayWhiteMs: number | null = null;
   displayBlackMs: number | null = null;
   clockTimer: number | null = null;
   private onlineAutoConnected = false;
   sessionUsername: string | null = null;
+  sessionUserId: number | null = null;
   private destroyed = false;
+  private readonly onStorageChange = (event: StorageEvent) => {
+    if (event.key === 'lang') this.syncLangFromStorage();
+  };
 
   readonly translations = {
     en: {
@@ -125,6 +129,9 @@ export class GamePageComponent {
       subtitle: 'Engine-powered bot, analysis, and FIDE rules',
       onlineSetup: 'Online setup',
       onlineSetupSubtitle: 'Create a room or join instantly',
+      playMode: 'Choose a play mode',
+      playVsBotTab: 'Play vs Bot',
+      multiplayerTab: 'Multiplayer',
       username: 'Username (optional)',
       timeControl: 'Time control',
       roomCode: 'Room code',
@@ -138,6 +145,8 @@ export class GamePageComponent {
       manageTab: 'Manage',
       publicTab: 'Public rooms',
       quickStart: 'Quick start',
+      playingAs: 'Playing as',
+      arenaPreview: 'Arena preview',
       connectFirst: 'Connect first',
       refresh: 'Refresh',
       host: 'Host',
@@ -159,7 +168,7 @@ export class GamePageComponent {
       inviteExpires: 'Expires',
       inviteUses: 'Uses',
       chatTitle: 'Room chat',
-      chatSubtitleEmpty: 'Join a room to chat.',
+      chatEmpty: 'No messages yet. Start the conversation.',
       chatPlaceholder: 'Type a message...',
       send: 'Send',
       spectator: 'Spectator',
@@ -173,12 +182,16 @@ export class GamePageComponent {
       drawOfferTitle: 'Opponent offers a draw',
       drawOfferSubtitle: 'Accept or decline to continue.',
       gameOver: 'Game over',
+      gameFinished: 'Game finished',
+      yourTurn: 'Your turn',
+      opponentTurn: "Opponent's turn",
       resultWin: 'You win',
       resultLoss: 'You lose',
       resultDraw: 'Draw',
       endCheckmate: 'Checkmate',
       endResign: 'Resignation',
       endTimeout: 'Time out',
+      endDisconnectTimeout: 'Game ended after the opponent did not reconnect in time',
       endStalemate: 'Stalemate',
       endAgreement: 'Agreed draw',
       endRepetition: 'Threefold repetition',
@@ -187,6 +200,32 @@ export class GamePageComponent {
       connect: 'Connect',
       connected: 'Connected',
       disconnected: 'Disconnected',
+      connecting: 'Connecting to server...',
+      authenticating: 'Signing in...',
+      reconnecting: 'Server unavailable. Reconnecting...',
+      recoveringGame: 'Restoring game state...',
+      reconnectFailed: 'Reconnect failed. Try again.',
+      recoveryFailed: 'Recovery failed. Reconnect or return to the lobby.',
+      gameInProgress: 'Game in progress',
+      onlineActionFailed: 'Multiplayer action failed. Please try again.',
+      reconnectAckTimeout: 'The server did not confirm the reconnect. Retrying stopped; reconnect to restore the game.',
+      invalidGameSnapshot: 'The recovered board could not be verified. Keeping the current board while requesting a fresh snapshot.',
+      stateConflict: 'Game updates did not match. Checking the state with the server.',
+      snapshotRecoveryFailed: 'The server could not provide a verifiable game state. Keeping the current board; reconnect to try again.',
+      roomKicked: 'You were removed from the room.',
+      roomClosedHostDeleted: 'The host deleted the room.',
+      roomClosedHostLeft: 'The host left and closed the room.',
+      roomClosedHostDisconnected: 'The host disconnected and closed the room.',
+      roomClosedRoomExpired: 'The room expired.',
+      roomClosedNoParticipants: 'The room closed because no participants remained.',
+      roomClosed: 'Room was closed by the host.',
+      roomDeleted: 'Room deleted.',
+      opponentConnected: 'Opponent connected',
+      opponentDisconnected: 'Opponent disconnected. Waiting for them to reconnect...',
+      matchmakingQueued: 'Searching for an opponent...',
+      cancelQueue: 'Cancel search',
+      retryConnection: 'Retry connection',
+      alreadyQueued: 'You are already in the matchmaking queue.',
       createRoom: 'Create room',
       joinRoom: 'Join room',
       matchmaking: 'Matchmaking',
@@ -238,8 +277,6 @@ export class GamePageComponent {
       botGameTitle: 'Bot game',
       preStartTitle: 'Ready to play?',
       preStartSubtitle: 'Pick your bot settings and start the game.',
-      onlineWaitTitle: 'Waiting for game',
-      onlineWaitSubtitle: 'Create or join a room to start playing.',
       white: 'White',
       black: 'Black',
       youWonTitle: 'You won!',
@@ -281,6 +318,9 @@ export class GamePageComponent {
       subtitle: 'Bot, analiza i zasady FIDE',
       onlineSetup: 'Ustawienia online',
       onlineSetupSubtitle: 'Utworz pokoj lub dolacz od razu',
+      playMode: 'Wybierz tryb gry',
+      playVsBotTab: 'Gra z botem',
+      multiplayerTab: 'Multiplayer',
       username: 'Nazwa (opcjonalnie)',
       timeControl: 'Tempo gry',
       roomCode: 'Kod pokoju',
@@ -294,6 +334,8 @@ export class GamePageComponent {
       manageTab: 'Zarzadzaj',
       publicTab: 'Publiczne pokoje',
       quickStart: 'Szybki start',
+      playingAs: 'Grasz jako',
+      arenaPreview: 'Podglad Areny',
       connectFirst: 'Najpierw polacz',
       refresh: 'Odswiez',
       host: 'Gospodarz',
@@ -315,7 +357,7 @@ export class GamePageComponent {
       inviteExpires: 'Wazne do',
       inviteUses: 'Uzycia',
       chatTitle: 'Czat pokoju',
-      chatSubtitleEmpty: 'Dolacz do pokoju, aby pisac.',
+      chatEmpty: 'Brak wiadomosci. Rozpocznij rozmowe.',
       chatPlaceholder: 'Napisz wiadomosc...',
       send: 'Wyslij',
       spectator: 'Widz',
@@ -329,12 +371,16 @@ export class GamePageComponent {
       drawOfferTitle: 'Przeciwnik proponuje remis',
       drawOfferSubtitle: 'Akceptuj lub odrzuc.',
       gameOver: 'Koniec gry',
+      gameFinished: 'Partia zakonczona',
+      yourTurn: 'Twoj ruch',
+      opponentTurn: 'Ruch przeciwnika',
       resultWin: 'Wygrales',
       resultLoss: 'Przegrales',
       resultDraw: 'Remis',
       endCheckmate: 'Mat',
       endResign: 'Poddanie',
       endTimeout: 'Czas',
+      endDisconnectTimeout: 'Partia zakonczona po uplywie czasu na powrot przeciwnika',
       endStalemate: 'Pat',
       endAgreement: 'Remis zgodny',
       endRepetition: 'Trzykrotne powtorzenie',
@@ -343,6 +389,32 @@ export class GamePageComponent {
       connect: 'Polacz',
       connected: 'Polaczono',
       disconnected: 'Brak polaczenia',
+      connecting: 'Laczenie z serwerem...',
+      authenticating: 'Logowanie...',
+      reconnecting: 'Serwer niedostepny. Ponawianie polaczenia...',
+      recoveringGame: 'Przywracanie stanu partii...',
+      reconnectFailed: 'Nie udalo sie polaczyc ponownie. Sprobuj jeszcze raz.',
+      recoveryFailed: 'Nie udalo sie odzyskac partii. Polacz sie ponownie lub wroc do lobby.',
+      gameInProgress: 'Partia trwa',
+      onlineActionFailed: 'Nie udalo sie wykonac akcji multiplayer. Sprobuj ponownie.',
+      reconnectAckTimeout: 'Serwer nie potwierdzil ponownego polaczenia. Ponawianie zatrzymano; polacz sie ponownie, aby przywrocic partie.',
+      invalidGameSnapshot: 'Nie mozna zweryfikowac odzyskanej planszy. Zachowano obecna plansze i poproszono o nowy stan.',
+      stateConflict: 'Aktualizacje partii sa niespojne. Sprawdzam stan na serwerze.',
+      snapshotRecoveryFailed: 'Serwer nie dostarczyl wiarygodnego stanu partii. Zachowano obecna plansze; polacz sie ponownie, aby sprobowac jeszcze raz.',
+      roomKicked: 'Usunieto Cie z pokoju.',
+      roomClosedHostDeleted: 'Gospodarz usunal pokoj.',
+      roomClosedHostLeft: 'Gospodarz opuscil pokoj i go zamknal.',
+      roomClosedHostDisconnected: 'Gospodarz utracil polaczenie i zamknal pokoj.',
+      roomClosedRoomExpired: 'Pokoj wygasl.',
+      roomClosedNoParticipants: 'Pokoj zamknieto, bo nie pozostali w nim uczestnicy.',
+      roomClosed: 'Gospodarz zamknal pokoj.',
+      roomDeleted: 'Pokoj usuniety.',
+      opponentConnected: 'Przeciwnik polaczony',
+      opponentDisconnected: 'Przeciwnik utracil polaczenie. Czekamy na jego powrot...',
+      matchmakingQueued: 'Szukamy przeciwnika...',
+      cancelQueue: 'Anuluj szukanie',
+      retryConnection: 'Polacz ponownie',
+      alreadyQueued: 'Jestes juz w kolejce matchmakingu.',
       createRoom: 'Utworz pokoj',
       joinRoom: 'Dolacz do pokoju',
       matchmaking: 'Matchmaking',
@@ -394,8 +466,6 @@ export class GamePageComponent {
       botGameTitle: 'Gra z botem',
       preStartTitle: 'Gotowy do gry?',
       preStartSubtitle: 'Ustaw bota i rozpocznij gre.',
-      onlineWaitTitle: 'Czekamy na gre',
-      onlineWaitSubtitle: 'Utworz lub dolacz do pokoju.',
       white: 'Biale',
       black: 'Czarne',
       youWonTitle: 'Wygrales!',
@@ -447,6 +517,7 @@ export class GamePageComponent {
       this.destroyed = true;
       this.invalidateBotSession();
       this.analysis.stop();
+      window.removeEventListener('storage', this.onStorageChange);
       if (this.clockTimer) {
         window.clearInterval(this.clockTimer);
         this.clockTimer = null;
@@ -455,7 +526,6 @@ export class GamePageComponent {
     this.multiplayer.gameState$
       .pipe(takeUntilDestroyed(destroyRef))
       .subscribe((game) => {
-        this.multiplayerActive = !!game?.gameId;
         if (!game) {
           this.displayWhiteMs = null;
           this.displayBlackMs = null;
@@ -494,17 +564,18 @@ export class GamePageComponent {
       .subscribe((game) => {
         if (!game) {
           this.pendingServerMove = false;
+          this.multiplayerHistoryMoves = [];
           return;
         }
         try {
-          this.state.loadExternalState(game.fen,
-            game.moves.map(m => ({ san: '', from: m.from, to: m.to,
-              promotion: m.promotion ?? undefined })),
+          this.multiplayerHistoryMoves = this.buildMultiplayerHistory(game);
+          this.state.loadExternalState(game.fen, this.multiplayerHistoryMoves,
             game.sideToMove === 'WHITE' ? 'w' : 'b');
         } catch (error) {
           this.state.status$.next(error instanceof Error ? error.message : 'Invalid game history');
           return;
         }
+        this.pendingPromotion = null;
         this.pendingServerMove = false;
         if (game.analysis) {
           this.analysis.applyExternalAnalysis(game.analysis, game.fen);
@@ -520,10 +591,6 @@ export class GamePageComponent {
         if (ready && this.pendingOnlineAction) {
           const action = this.pendingOnlineAction;
           this.pendingOnlineAction = null;
-          if (this.pendingOnlineTimer) {
-            window.clearTimeout(this.pendingOnlineTimer);
-            this.pendingOnlineTimer = null;
-          }
           action();
         }
       });
@@ -532,18 +599,16 @@ export class GamePageComponent {
       .pipe(takeUntilDestroyed(destroyRef))
       .subscribe((connected) => {
         if (!connected) {
-          this.pendingServerMove = false;
+          this.clearMultiplayerSelection();
         }
-        if (!connected || !this.pendingOnlineAction) {
-          return;
+      });
+
+    this.multiplayer.connectionState$
+      .pipe(takeUntilDestroyed(destroyRef))
+      .subscribe((connectionState) => {
+        if (connectionState !== 'READY') {
+          this.clearMultiplayerSelection();
         }
-        const action = this.pendingOnlineAction;
-        this.pendingOnlineAction = null;
-        if (this.pendingOnlineTimer) {
-          window.clearTimeout(this.pendingOnlineTimer);
-          this.pendingOnlineTimer = null;
-        }
-        window.setTimeout(() => action(), 300);
       });
 
     this.multiplayer.sessionUsername$
@@ -556,13 +621,10 @@ export class GamePageComponent {
         }
       });
 
-    this.multiplayer.reconnectToken$
+    this.multiplayer.sessionUserId$
       .pipe(takeUntilDestroyed(destroyRef))
-      .subscribe((token) => {
-        if (token) {
-          this.onlineReconnect = token;
-          this.safeSessionSet('onlineReconnect', token);
-        }
+      .subscribe((userId) => {
+        this.sessionUserId = userId;
       });
 
     this.multiplayer.lastError$
@@ -618,9 +680,7 @@ export class GamePageComponent {
           this.botErrorState = null;
           void this.engineApi.validateSession().then(() => this.cdr.markForCheck());
           this.safeSessionRemove('onlineUsername');
-          this.safeSessionRemove('onlineReconnect');
           this.onlineUsername = '';
-          this.onlineReconnect = '';
           this.botGameActive = false;
           this.botEnabled = false;
           this.analysis.stop();
@@ -638,11 +698,7 @@ export class GamePageComponent {
         }
       });
     this.syncLangFromStorage();
-    window.addEventListener('storage', (event) => {
-      if (event.key === 'lang') {
-        this.syncLangFromStorage();
-      }
-    });
+    window.addEventListener('storage', this.onStorageChange);
   }
 
   onSquareClick(square: string) {
@@ -664,11 +720,6 @@ export class GamePageComponent {
     }
     const multiplayerGameId = this.multiplayer.gameState$.value?.gameId;
     if (multiplayerGameId) {
-      const yourColor = this.multiplayer.yourColor$.value;
-      const sideToMove = this.multiplayer.gameState$.value?.sideToMove;
-      if (!yourColor || !sideToMove || yourColor !== sideToMove) {
-        return;
-      }
       this.pendingServerMove = true;
       this.state.clearSelection();
       this.multiplayer.makeMove(multiplayerGameId, {
@@ -688,6 +739,12 @@ export class GamePageComponent {
     }
   }
 
+  private clearMultiplayerSelection() {
+    this.pendingServerMove = false;
+    this.pendingPromotion = null;
+    this.state.clearSelection();
+  }
+
   choosePromotion(piece: string) {
     if (!this.pendingPromotion) {
       return;
@@ -697,11 +754,6 @@ export class GamePageComponent {
     }
     const multiplayerGameId = this.multiplayer.gameState$.value?.gameId;
     if (multiplayerGameId) {
-      const yourColor = this.multiplayer.yourColor$.value;
-      const sideToMove = this.multiplayer.gameState$.value?.sideToMove;
-      if (!yourColor || !sideToMove || yourColor !== sideToMove) {
-        return;
-      }
       this.pendingServerMove = true;
       this.state.clearSelection();
       this.multiplayer.makeMove(multiplayerGameId, {
@@ -1066,8 +1118,7 @@ export class GamePageComponent {
 
   connectOnline() {
     const username = this.onlineUsername || this.safeSessionGet('onlineUsername') || undefined;
-    const token = this.onlineReconnect || this.safeSessionGet('onlineReconnect') || undefined;
-    this.multiplayer.connect(username, token || undefined);
+    this.multiplayer.connect(username);
     this.multiplayer.listRooms();
   }
 
@@ -1086,19 +1137,14 @@ export class GamePageComponent {
 
   private loadOnlineDefaults() {
     const savedUser = this.safeSessionGet('onlineUsername');
-    const savedToken = this.safeSessionGet('onlineReconnect');
     if (savedUser && !this.onlineUsername) {
       this.onlineUsername = savedUser;
-    }
-    if (savedToken && !this.onlineReconnect) {
-      this.onlineReconnect = savedToken;
     }
   }
 
   startOnlineMatchmaking() {
     this.runOnlineAction(() => {
       this.multiplayer.queueMatchmaking(this.onlineTimeControl);
-      this.showOnlineSetup = false;
     });
   }
 
@@ -1302,6 +1348,21 @@ export class GamePageComponent {
       case 'matchmaking_failed':
       case 'matchmakingFailed':
         return 'Matchmaking unavailable.';
+      case 'already_queued':
+        return this.t('alreadyQueued');
+      case 'reconnect_failed':
+        return this.t('reconnectFailed');
+      case 'reconnect_ack_timeout':
+        return this.t('reconnectAckTimeout');
+      case 'invalid_reconnect_token':
+      case 'invalid_room_reconnect_token':
+        return this.t('recoveryFailed');
+      case 'invalid_game_snapshot':
+        return this.t('invalidGameSnapshot');
+      case 'state_conflict':
+        return this.t('stateConflict');
+      case 'snapshot_recovery_failed':
+        return this.t('snapshotRecoveryFailed');
       case 'room_invite_failed':
       case 'roomInviteFailed':
         return 'Unable to create invite.';
@@ -1317,26 +1378,36 @@ export class GamePageComponent {
       case 'room_in_game':
         return 'Room already in game.';
       case 'roomKicked':
-        return 'You were removed from the room.';
+        return this.t('roomKicked');
+      case 'room_closed_host_deleted':
+        return this.t('roomClosedHostDeleted');
+      case 'room_closed_host_left':
+        return this.t('roomClosedHostLeft');
+      case 'room_closed_host_disconnected':
+        return this.t('roomClosedHostDisconnected');
+      case 'room_closed_room_expired':
+        return this.t('roomClosedRoomExpired');
+      case 'room_closed_no_active_participants':
+        return this.t('roomClosedNoParticipants');
       case 'roomClosed':
-        return 'Room was closed by the host.';
+        return this.t('roomClosed');
       case 'roomDeleted':
-        return 'Room deleted.';
+        return this.t('roomDeleted');
       case 'draw_offer_limit':
         return 'Draw offer limit reached.';
       case 'room_spectate_failed':
       case 'roomSpectateFailed':
         return 'Unable to spectate room.';
       default:
-        return code;
+        return this.t('onlineActionFailed');
     }
   }
 
-  isOwnRoom(room: { hostUsername?: string | null }) {
-    if (!room || !room.hostUsername || !this.sessionUsername) {
+  isOwnRoom(room: { hostUserId?: number | null }) {
+    if (!room || room.hostUserId == null || this.sessionUserId == null) {
       return false;
     }
-    return room.hostUsername.toLowerCase() === this.sessionUsername.toLowerCase();
+    return room.hostUserId === this.sessionUserId;
   }
 
   roomParticipants() {
@@ -1344,24 +1415,24 @@ export class GamePageComponent {
   }
 
   isHostInRoom() {
-    const username = this.sessionUsername;
-    if (!username) {
+    const userId = this.sessionUserId;
+    if (userId == null) {
       return false;
     }
     return this.multiplayer.roomParticipants$.value.some(
-      (p) => (p.role || '').toUpperCase() === 'HOST' && (p.username || '').toLowerCase() === username.toLowerCase()
+      (p) => (p.role || '').toUpperCase() === 'HOST' && p.userId === userId
     );
   }
 
-  canKickParticipant(participant: { username?: string | null; role?: string | null }) {
-    if (!participant || !participant.username) {
+  canKickParticipant(participant: { userId?: number | null; role?: string | null }) {
+    if (!participant || participant.userId == null) {
       return false;
     }
     const role = (participant.role || '').toUpperCase();
     if (role !== 'PLAYER' && role !== 'SPECTATOR') {
       return false;
     }
-    return this.isHostInRoom() && participant.username.toLowerCase() !== (this.sessionUsername || '').toLowerCase();
+    return this.isHostInRoom() && participant.userId !== this.sessionUserId;
   }
 
   hasPendingPlayer() {
@@ -1371,15 +1442,15 @@ export class GamePageComponent {
   }
 
   private isPlayerInRoom() {
-    const username = this.sessionUsername;
-    if (!username) {
+    const userId = this.sessionUserId;
+    if (userId == null) {
       return false;
     }
     return this.multiplayer.roomParticipants$.value.some(
       (p) =>
         (p.role || '').toUpperCase() === 'PLAYER' &&
         (p.status || '').toUpperCase() !== 'LEFT' &&
-        (p.username || '').toLowerCase() === username.toLowerCase()
+        p.userId === userId
     );
   }
 
@@ -1410,70 +1481,84 @@ export class GamePageComponent {
     return this.onlineMode && !!this.multiplayer.gameState$.value?.gameId;
   }
 
+  connectionStatusLabel() {
+    switch (this.multiplayer.connectionState$.value) {
+      case 'CONNECTING': return this.t('connecting');
+      case 'AUTHENTICATING': return this.t('authenticating');
+      case 'RECONNECTING': return this.t('reconnecting');
+      case 'RECOVERING_GAME': return this.t('recoveringGame');
+      case 'ERROR': return this.t('recoveryFailed');
+      case 'READY': return this.t('connected');
+      default: return this.t('disconnected');
+    }
+  }
+
+  showOnlineBoardStatus() {
+    return this.multiplayer.connectionState$.value !== 'READY'
+      || this.multiplayer.queueState$.value === 'QUEUED'
+      || !!this.multiplayer.activeRoomCode$.value;
+  }
+
+  multiplayerOutcome() {
+    const game = this.multiplayer.gameState$.value;
+    return game ? toMultiplayerOutcome(game, this.multiplayer.yourColor$.value) : null;
+  }
+
+  reviewMultiplayerGame(outcome: GameOutcome) {
+    this.multiplayerReviewedGameId = outcome.gameId;
+    if (typeof document !== 'undefined') {
+      window.setTimeout(() => document.getElementById('multiplayer-review-history')?.focus(), 0);
+    }
+  }
+
+  isReviewingMultiplayerGame() {
+    return !!this.multiplayerReviewedGameId
+      && this.multiplayer.gameState$.value?.gameId === this.multiplayerReviewedGameId;
+  }
+
+  multiplayerTurnLabel() {
+    const game = this.multiplayer.gameState$.value;
+    if (!game) return '';
+    if (game.result !== 'ONGOING') return this.t('gameFinished');
+    if (this.multiplayer.connectionState$.value !== 'READY') return this.connectionStatusLabel();
+    if (this.multiplayer.opponentDisconnected$.value) return this.t('opponentDisconnected');
+    const yourColor = this.multiplayer.yourColor$.value;
+    const turn = !yourColor ? this.t('spectator')
+      : yourColor === game.sideToMove ? this.t('yourTurn') : this.t('opponentTurn');
+    const status = `${this.t('gameInProgress')} · ${turn}`;
+    return this.state.positionStatus$.value === 'CHECK'
+      ? `${this.t('checkAlert')} · ${status}` : status;
+  }
+
+  private buildMultiplayerHistory(game: GameStateSyncDto): MoveView[] {
+    const replay = new Chess();
+    return game.moves.map((move) => {
+      const applied = replay.move({
+        from: move.from as Square,
+        to: move.to as Square,
+        promotion: (move.promotion ?? undefined) as 'q' | 'r' | 'b' | 'n' | undefined
+      });
+      return {
+        san: applied.san,
+        from: applied.from,
+        to: applied.to,
+        promotion: applied.promotion
+      };
+    });
+  }
+
+  chessArenaState(): ChessArenaState {
+    const connection = this.multiplayer.connectionState$.value;
+    if (connection === 'RECONNECTING' || connection === 'RECOVERING_GAME') return 'RECONNECTING';
+    if (this.multiplayer.matchFound$.value) return 'MATCH_FOUND';
+    if (this.multiplayer.gameState$.value?.gameId) return 'ACTIVE_GAME';
+    if (this.multiplayer.queueState$.value === 'QUEUED') return 'WAITING_FOR_OPPONENT';
+    return 'LOBBY';
+  }
+
   isSpectator() {
     return this.onlineMode && !this.multiplayer.yourColor$.value && !!this.multiplayer.gameState$.value?.gameId;
   }
-
-  multiplayerResultTitle() {
-    const game = this.multiplayer.gameState$.value;
-    if (!game || game.result === 'ONGOING') {
-      return '';
-    }
-    if (game.result === 'DRAW') {
-      return this.t('resultDraw');
-    }
-    const yourColor = this.multiplayer.yourColor$.value;
-    if (game.result === 'WHITE_WIN') {
-      return yourColor === 'WHITE' ? this.t('resultWin') : this.t('resultLoss');
-    }
-    if (game.result === 'BLACK_WIN') {
-      return yourColor === 'BLACK' ? this.t('resultWin') : this.t('resultLoss');
-    }
-    return this.t('gameOver');
-  }
-
-  multiplayerResultClass(): 'win' | 'loss' | 'draw' | '' {
-    const game = this.multiplayer.gameState$.value;
-    if (!game || game.result === 'ONGOING') {
-      return '';
-    }
-    if (game.result === 'DRAW') {
-      return 'draw';
-    }
-    const yourColor = this.multiplayer.yourColor$.value;
-    if (game.result === 'WHITE_WIN') {
-      return yourColor === 'WHITE' ? 'win' : 'loss';
-    }
-    if (game.result === 'BLACK_WIN') {
-      return yourColor === 'BLACK' ? 'win' : 'loss';
-    }
-    return '';
-  }
-
-  multiplayerEndReason() {
-    const reason = this.multiplayer.gameState$.value?.endReason;
-    switch (reason) {
-      case 'CHECKMATE':
-        return this.t('endCheckmate');
-      case 'RESIGNATION':
-        return this.t('endResign');
-      case 'TIME_OUT':
-        return this.t('endTimeout');
-      case 'STALEMATE':
-        return this.t('endStalemate');
-      case 'AGREED_DRAW':
-        return this.t('endAgreement');
-      case 'THREEFOLD_REPETITION':
-        return this.t('endRepetition');
-      case 'FIFTY_MOVE_RULE':
-        return this.t('endFifty');
-      case 'INSUFFICIENT_MATERIAL':
-        return this.t('endInsufficient');
-      default:
-        return '';
-    }
-  }
-
 
   colorLabel(color: 'w' | 'b') {
     return color === 'w' ? this.t('white') : this.t('black');
@@ -1492,16 +1577,6 @@ export class GamePageComponent {
     } else {
       this.analysis.stop();
     }
-  }
-
-  shouldShowPreGameOverlay() {
-    if (this.botMode) {
-      return !this.botGameActive;
-    }
-    if (this.onlineMode) {
-      return !this.multiplayerActive;
-    }
-    return false;
   }
 
   isBotThinking(): boolean {
@@ -1528,13 +1603,18 @@ export class GamePageComponent {
   }
 
   canHumanMove(): boolean {
-    if (this.shouldShowPreGameOverlay() || this.pendingServerMove) return false;
+    if (this.pendingServerMove) return false;
     if (this.botMode) {
       return this.botGameActive && !this.isBotThinking() && !this.isGameFinished()
         && this.state.sideToMove$.value === this.playerColor;
     }
-    if (this.multiplayer.gameState$.value?.gameId) {
-      return this.multiplayer.gameState$.value.result === 'ONGOING';
+    if (this.onlineMode) {
+      const game = this.multiplayer.gameState$.value;
+      return !!game?.gameId
+        && game.result === 'ONGOING'
+        && !!this.multiplayer.yourColor$.value
+        && this.multiplayer.yourColor$.value === game.sideToMove
+        && this.multiplayer.connectionState$.value === 'READY';
     }
     return !this.state.isGameOver();
   }
@@ -1568,32 +1648,6 @@ export class GamePageComponent {
     this.pendingPromotion = null;
   }
 
-  boardLockTitle() {
-    if (this.botMode) {
-      return this.t('preStartTitle');
-    }
-    if (this.onlineMode) {
-      if (this.multiplayer.gameState$.value?.gameId && !this.multiplayer.yourColor$.value) {
-        return this.t('spectator');
-      }
-      return this.t('onlineWaitTitle');
-    }
-    return '';
-  }
-
-  boardLockSubtitle() {
-    if (this.botMode) {
-      return this.t('preStartSubtitle');
-    }
-    if (this.onlineMode) {
-      if (this.multiplayer.gameState$.value?.gameId && !this.multiplayer.yourColor$.value) {
-        return this.t('onlineWaitSubtitle');
-      }
-      return this.t('onlineWaitSubtitle');
-    }
-    return '';
-  }
-
   sendChatMessage() {
     const roomCode = this.multiplayer.activeRoomCode$.value;
     const text = this.chatMessage.trim();
@@ -1609,28 +1663,28 @@ export class GamePageComponent {
       action();
       return;
     }
-    if (this.multiplayer.connected$.value) {
-      window.setTimeout(() => action(), 300);
-      return;
-    }
     this.pendingOnlineAction = action;
-    if (this.pendingOnlineTimer) {
-      window.clearTimeout(this.pendingOnlineTimer);
+    if (this.multiplayer.connectionState$.value === 'DISCONNECTED'
+        || this.multiplayer.connectionState$.value === 'ERROR') {
+      this.connectOnline();
     }
-    this.connectOnline();
-    this.pendingOnlineTimer = window.setTimeout(() => {
-      if (this.pendingOnlineAction && this.multiplayer.connected$.value) {
-        const pending = this.pendingOnlineAction;
-        this.pendingOnlineAction = null;
-        this.pendingOnlineTimer = null;
-        pending();
-      }
-    }, 2000);
   }
 
   setOnlineView(view: 'public' | 'create' | 'join' | 'manage') {
     this.onlineView = view;
     this.multiplayer.clearLastError();
+  }
+
+  onOnlineTabKeydown(event: KeyboardEvent) {
+    const tabs: Array<typeof this.onlineView> = ['public', 'create', 'join', 'manage'];
+    const index = tabs.indexOf(this.onlineView);
+    const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+      : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    this.setOnlineView(tabs[next]);
+    (event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   }
 
   private parseEvalValue(raw: string | null | undefined) {

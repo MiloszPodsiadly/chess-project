@@ -25,7 +25,7 @@ public class SecurityConfig {
 
     @Bean
     public UserDetailsService userDetailsService() {
-        return username -> userRepository.findByUsername(username)
+        return username -> userRepository.findByUsernameAndGuestFalse(username)
                 .map(user -> User.withUsername(user.getUsername())
                         .password(user.getPasswordHash())
                         .roles("USER")

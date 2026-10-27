@@ -1,0 +1,106 @@
+<figure class="arena-animation" [class.state-waiting]="state === 'WAITING_FOR_OPPONENT'"
+  [class.state-reconnecting]="state === 'RECONNECTING'" [class.state-active]="state === 'ACTIVE_GAME'">
+  @if (state !== 'ACTIVE_GAME') {
+    <div class="arena-art" aria-hidden="true">
+      <div class="arena-kicker"><span></span>{{ title }}</div>
+      <svg class="arena-scene" [attr.viewBox]="viewBox" focusable="false" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient [attr.id]="ref('night')" x2="0" y2="1"><stop stop-color="#07121e"/><stop offset=".65" stop-color="#10282e"/><stop offset="1" stop-color="#030d17"/></linearGradient>
+          <linearGradient [attr.id]="ref('stone')" x2="1" y2="0"><stop stop-color="#0c1924"/><stop offset=".45" stop-color="#273e47"/><stop offset=".65" stop-color="#172a35"/><stop offset="1" stop-color="#08131d"/></linearGradient>
+          <linearGradient [attr.id]="ref('slab')" x2="0" y2="1"><stop stop-color="#3b6262"/><stop offset=".2" stop-color="#193436"/><stop offset=".65" stop-color="#0d2029"/><stop offset="1" stop-color="#28484a"/></linearGradient>
+          <linearGradient [attr.id]="ref('ivory')" x1="0" y1="0" x2="1" y2=".2"><stop stop-color="#608c8b"/><stop offset=".22" stop-color="#c9d8c7"/><stop offset=".42" stop-color="#f1efdc"/><stop offset=".7" stop-color="#b8c8b4"/><stop offset="1" stop-color="#477b78"/></linearGradient>
+          <linearGradient [attr.id]="ref('obsidian')" x1="0" y1="0" x2="1" y2=".25"><stop stop-color="#07131e"/><stop offset=".3" stop-color="#21414a"/><stop offset=".5" stop-color="#426264"/><stop offset=".65" stop-color="#1b343d"/><stop offset="1" stop-color="#081b28"/></linearGradient>
+          <radialGradient [attr.id]="ref('halo')"><stop stop-color="#42b8a3" stop-opacity=".24"/><stop offset="1" stop-color="#1a6673" stop-opacity="0"/></radialGradient>
+          <radialGradient [attr.id]="ref('floor')"><stop stop-color="#37b7a0" stop-opacity=".2"/><stop offset="1" stop-color="#081320" stop-opacity="0"/></radialGradient>
+          <radialGradient [attr.id]="ref('mist')"><stop stop-color="#95cec7" stop-opacity=".13"/><stop offset="1" stop-color="#a5e2d7" stop-opacity="0"/></radialGradient>
+          <radialGradient [attr.id]="ref('amber')"><stop stop-color="#ffda96" stop-opacity=".6"/><stop offset=".15" stop-color="#bb8242" stop-opacity=".25"/><stop offset="1" stop-color="#bb8242" stop-opacity="0"/></radialGradient>
+          <linearGradient [attr.id]="ref('ray')" x2="0" y2="1"><stop stop-color="#81c8cb" stop-opacity=".12"/><stop offset="1" stop-color="#6cc3c5" stop-opacity="0"/></linearGradient>
+          <linearGradient [attr.id]="ref('scan')"><stop stop-color="#90efcf" stop-opacity="0"/><stop offset=".5" stop-color="#a1f5dc" stop-opacity=".27"/><stop offset="1" stop-color="#90efcf" stop-opacity="0"/></linearGradient>
+          <radialGradient [attr.id]="ref('vignette')"><stop offset=".5" stop-color="#030c17" stop-opacity="0"/><stop offset="1" stop-color="#030c17" stop-opacity=".8"/></radialGradient>
+          <clipPath [attr.id]="ref('board-clip')"><path d="M500 250 876 414 500 578 124 414Z"/></clipPath>
+          <g [attr.id]="ref('pawn')"><path d="M-14-6q0-9 8-13l3-19h6l3 19q8 4 8 13Z"/><circle cy="-47" r="9"/><path d="M-10-36h20v5h-20Z"/></g>
+          <g [attr.id]="ref('rook')"><path d="M-19-6q1-10 10-15l2-28h-9v-21h8v8h5v-8h8v8h5v-8h8v21H7l2 28q9 5 10 15Z"/><path d="M-13-49h26M-10-26h20" fill="none"/></g>
+          <g [attr.id]="ref('knight')"><path d="M-20-6q2-10 10-16l-2-17-10-3 2-13 12-12 8-9 3 9q15 4 17 20l-4 21q-2 8 7 20Z"/><path d="m-19-47 14 2 9-14M-9-23q19-10 13-30" fill="none"/><circle cx="-3" cy="-58" r="1.8" fill="#0b222c" stroke="none"/></g>
+          <g [attr.id]="ref('bishop')"><path d="M-18-6q0-11 10-16l4-25h8l4 25q10 5 10 16Z"/><path d="M0-76q-19 17-10 28 10 7 20 0 9-11-10-28Z"/><path d="m5-67-10 16M-11-43h22" fill="none"/><circle cy="-77" r="3"/></g>
+          <g [attr.id]="ref('queen')"><path d="M-20-6q1-12 11-18l4-23-13-22 11 7 7-13 7 13 11-7-13 22 4 23q10 6 11 18Z"/><circle cx="-18" cy="-70" r="3"/><circle cy="-78" r="3"/><circle cx="18" cy="-70" r="3"/><path d="M-12-47h24M-10-40h20" fill="none"/></g>
+          <g [attr.id]="ref('king')"><path d="M-20-6q1-12 11-19l3-23q-15-4-11-17l10 2v-5H7v5l10-2q4 13-11 17l3 23q10 7 11 19Z"/><path d="M-3-68v-7h-6v-6h6v-7h6v7h6v6H3v7Z"/><path d="M-11-45h22M-9-38h18" fill="none"/></g>
+        </defs>
+        <rect width="1000" height="680" [attr.fill]="paint('night')"/>
+        <ellipse cx="500" cy="240" rx="425" ry="300" [attr.fill]="paint('halo')"/>
+        <g class="architecture" fill="none" stroke="#47616b" stroke-width="2">
+          <path d="M330 380V170Q330 72 500 12q170 60 170 158v210M352 377V175q0-85 148-139 148 54 148 139v202"/>
+          <path d="M367 365V185q0-70 133-125 133 55 133 125v180" stroke="#163b46" stroke-width="15"/>
+          <path d="M85 357V175q70-110 140 0v182M775 357V175q70-110 140 0v182" opacity=".4"/>
+          <path d="M110 350V180q45-74 90 0v170M800 350V180q45-74 90 0v170" stroke="#8d7044" opacity=".2"/>
+          <path d="M0 291h335m330 0h335M0 221h78m150 0h107m330 0h110m150 0h75" opacity=".3"/>
+        </g>
+        <g class="columns">
+          @for (column of columns; track column) {
+            <g [attr.transform]="'translate(' + column + ' 0)'">
+              <path d="M-24 95h48l-7 25v243l13 12v16h-60v-16l13-12V120Z" [attr.fill]="paint('stone')" stroke="#39505b" stroke-width="1"/>
+              <path d="M-12 135v211M10 135v211M-24 120h48M-27 373h54" stroke="#53787e" opacity=".3"/>
+            </g>
+          }
+        </g>
+        <g class="ambient-rays" [attr.fill]="paint('ray')"><path d="M410 100 185 510 470 510Z"/><path d="m579 100-50 410h286Z"/></g>
+        <g class="crest" fill="none" stroke="#6dbaac">
+          <circle cx="500" cy="161" r="32" opacity=".26"/><circle cx="500" cy="161" r="23" opacity=".2"/>
+          <path d="m486 169-4-17 12 6 6-14 6 14 12-6-4 17Zm2 6h24" opacity=".7"/>
+          <path d="M500 119v8m0 68v8m-42-42h8m68 0h8" opacity=".5"/>
+        </g>
+        <path d="M0 403 500 280l500 123v277H0Z" fill="#0b1c27"/>
+        <g stroke="#45616a" stroke-width="1" opacity=".15" fill="none">
+          <path d="M500 280 20 680m480-400L980 680M500 280 210 680m290-400L790 680M500 280v400M0 492h1000M0 570h1000M0 661h1000"/>
+        </g>
+        <ellipse cx="500" cy="492" rx="460" ry="174" [attr.fill]="paint('floor')"/>
+        <g class="distant-flames">
+          <ellipse cx="144" cy="278" rx="100" ry="115" [attr.fill]="paint('amber')"/>
+          <ellipse cx="856" cy="278" rx="100" ry="115" [attr.fill]="paint('amber')"/>
+          <path d="M138 280h12l-3 30h-6Zm712 0h12l-3 30h-6Z" fill="#91734c"/>
+          <path d="M144 279q-10-10 0-24 11 14 0 24m712 0q-10-10 0-24 11 14 0 24" fill="#edc78b"/>
+        </g>
+        <ellipse cx="500" cy="522" rx="335" ry="84" fill="#020b11" opacity=".75"/>
+        <g class="board-foundation">
+          <path d="M124 414v29l376 168 376-168v-29L500 578Z" [attr.fill]="paint('slab')" stroke="#34575b"/>
+          <path d="m124 435 376 164 376-164M500 579v32" fill="none" stroke="#508f89" opacity=".55"/>
+          <path d="m116 414 384-173 384 173-384 173Z" fill="#102f35" stroke="#72b5a3" stroke-width="2"/>
+        </g>
+        <g class="board-grid">
+          @for (square of squares; track square.index) {
+            <polygon class="arena-square" [attr.points]="square.points" [attr.fill]="square.light ? '#355d59' : '#122d35'"
+              stroke="#70c3ad" stroke-width=".7" [style.--reveal-delay]="square.delay"/>
+          }
+        </g>
+        <path class="edge-energy" d="m124 414 376-164 376 164-376 164Z" fill="none" stroke="#9ce9cc" stroke-width="1.8" stroke-dasharray="85 994"/>
+        <g [attr.clip-path]="paint('board-clip')" pointer-events="none">
+          <rect class="waiting-scan" x="100" y="240" width="220" height="365" [attr.fill]="paint('scan')"/>
+          <rect class="match-wave" x="70" y="240" width="300" height="365" [attr.fill]="paint('scan')"/>
+        </g>
+        <g class="chessmen">
+          @for (piece of pieces; track piece.id) {
+            <g class="piece-position" [attr.transform]="'translate(' + piece.x + ' ' + piece.y + ')'">
+              <ellipse cy="2" rx="20" ry="6" fill="#020f18" opacity=".7"/>
+              <g class="piece-reveal" [style.--reveal-delay]="piece.delay">
+                <g class="piece-model" [class.champion-white]="piece.champion && piece.side === 'white'" [class.champion-black]="piece.champion && piece.side === 'black'"
+                  [attr.fill]="paint(piece.side === 'white' ? 'ivory' : 'obsidian')"
+                  [attr.stroke]="piece.side === 'white' ? '#83b7ac' : '#6ba49f'" stroke-width=".8" stroke-linejoin="round">
+                  <use [attr.href]="'#' + ref(piece.kind)" transform="scale(.85)"/>
+                  <ellipse cy="-5" rx="18" ry="5"/><path d="M-19-5v6q19 11 38 0v-6q-19 10-38 0Z"/>
+                  <ellipse cy="1" rx="19" ry="5" fill="none"/>
+                </g>
+              </g>
+            </g>
+          }
+        </g>
+        <ellipse class="mist mist-back" cx="520" cy="330" rx="410" ry="40" [attr.fill]="paint('mist')"/>
+        <ellipse class="mist mist-front" cx="480" cy="583" rx="480" ry="55" [attr.fill]="paint('mist')"/>
+        <g class="motes" fill="#b2dbca" opacity=".5"><circle cx="329" cy="238" r="1.3"/><circle cx="710" cy="310" r="1"/><circle cx="268" cy="350" r="1.5"/><circle cx="615" cy="216" r="1"/><circle cx="400" cy="310" r="1"/><circle cx="740" cy="218" r="1.2"/></g>
+        <rect width="1000" height="680" [attr.fill]="paint('vignette')" pointer-events="none"/>
+      </svg>
+      <span class="illustration-note">{{ illustrationLabel }}</span>
+    </div>
+  }
+  <figcaption class="arena-caption" role="status" aria-live="polite" aria-atomic="true">
+    <span class="status-mark" aria-hidden="true"></span>{{ statusLabel }}
+  </figcaption>
+</figure>

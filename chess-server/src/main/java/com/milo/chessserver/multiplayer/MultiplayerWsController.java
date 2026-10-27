@@ -23,10 +23,13 @@ public class MultiplayerWsController {
     @MessageMapping("hello/auth")
     public void hello(Principal principal,
                       @Payload HelloAuthRequest request) {
-        log.info("WS hello/auth from session={}, user={}, token={}", principal != null ? principal.getName() : null,
-                request != null ? request.username() : null,
-                request != null ? request.reconnectToken() : null);
-        multiplayerService.handleHello(principal.getName(), request);
+        multiplayerService.handleHello(sessionKey(principal), request);
+    }
+
+    @MessageMapping("ackReconnect")
+    public void acknowledgeReconnect(Principal principal,
+                                    @Payload ReconnectAckRequest request) {
+        multiplayerService.acknowledgeReconnect(sessionKey(principal), request);
     }
 
     @MessageMapping("createRoom")
@@ -36,18 +39,18 @@ public class MultiplayerWsController {
                 principal != null ? principal.getName() : null,
                 request != null ? request.timeControlType() : null,
                 request != null ? request.isPublic() : null);
-        String code = multiplayerService.createRoom(principal.getName(), request);
+        String code = multiplayerService.createRoom(sessionKey(principal), request);
         if (code != null) {
-            multiplayerService.sendEventToUser(principal.getName(), new WsEvent("roomCreated", code));
+            multiplayerService.sendEventToUser(sessionKey(principal), new WsEvent("roomCreated", code));
         }
     }
 
     @MessageMapping("joinRoom")
     public void joinRoom(Principal principal,
                          @Payload JoinRoomRequest request) {
-        log.info("WS joinRoom from session={}, roomCode={}", principal != null ? principal.getName() : null,
+        log.info("WS joinRoom from session={}, roomCode={}", sessionKey(principal),
                 request != null ? request.roomCode() : null);
-        multiplayerService.joinRoom(principal.getName(), request);
+        multiplayerService.joinRoom(sessionKey(principal), request);
     }
 
     @MessageMapping("queueMatchmaking")
@@ -55,105 +58,113 @@ public class MultiplayerWsController {
                       @Payload QueueMatchmakingRequest request) {
         log.info("WS queueMatchmaking from session={}, timeControl={}", principal != null ? principal.getName() : null,
                 request != null ? request.timeControlType() : null);
-        multiplayerService.queueMatchmaking(principal.getName(), request);
+        multiplayerService.queueMatchmaking(sessionKey(principal), request);
+    }
+
+    @MessageMapping("cancelMatchmaking")
+    public void cancelMatchmaking(Principal principal) {
+        multiplayerService.cancelMatchmaking(sessionKey(principal));
     }
 
     @MessageMapping("makeMove")
     public void makeMove(Principal principal,
                          @Payload MakeMoveRequest request) {
-        multiplayerService.makeMove(principal.getName(), request);
+        multiplayerService.makeMove(sessionKey(principal), request);
     }
 
     @MessageMapping("resign")
     public void resign(Principal principal,
                        @Payload ResignRequest request) {
-        multiplayerService.resign(principal.getName(), request);
+        multiplayerService.resign(sessionKey(principal), request);
     }
 
     @MessageMapping("offerDraw")
     public void offerDraw(Principal principal,
                           @Payload OfferDrawRequest request) {
-        multiplayerService.offerDraw(principal.getName(), request);
+        multiplayerService.offerDraw(sessionKey(principal), request);
     }
 
     @MessageMapping("acceptDraw")
     public void acceptDraw(Principal principal,
                            @Payload AcceptDrawRequest request) {
-        multiplayerService.acceptDraw(principal.getName(), request);
+        multiplayerService.acceptDraw(sessionKey(principal), request);
     }
 
     @MessageMapping("declineDraw")
     public void declineDraw(Principal principal,
                             @Payload DeclineDrawRequest request) {
-        multiplayerService.declineDraw(principal.getName(), request);
+        multiplayerService.declineDraw(sessionKey(principal), request);
     }
 
     @MessageMapping("requestSync")
     public void requestSync(Principal principal,
                             @Payload RequestSyncRequest request) {
-        multiplayerService.requestSync(principal.getName(), request);
+        multiplayerService.requestSync(sessionKey(principal), request);
     }
 
     @MessageMapping("listRooms")
     public void listRooms(Principal principal,
                           @Payload(required = false) ListRoomsRequest request) {
-        multiplayerService.listRooms(principal.getName());
+        multiplayerService.listRooms(sessionKey(principal));
     }
 
     @MessageMapping("createInvite")
     public void createInvite(Principal principal,
                              @Payload CreateInviteRequest request) {
-        multiplayerService.createInvite(principal.getName(), request);
+        multiplayerService.createInvite(sessionKey(principal), request);
     }
 
     @MessageMapping("spectateRoom")
     public void spectateRoom(Principal principal,
                              @Payload SpectateRoomRequest request) {
-        multiplayerService.spectateRoom(principal.getName(), request);
+        multiplayerService.spectateRoom(sessionKey(principal), request);
     }
 
     @MessageMapping("roomMessage")
     public void roomMessage(Principal principal,
                             @Payload SendRoomMessageRequest request) {
-        multiplayerService.sendRoomMessage(principal.getName(), request);
+        multiplayerService.sendRoomMessage(sessionKey(principal), request);
     }
 
     @MessageMapping("roomHistory")
     public void roomHistory(Principal principal,
                             @Payload RoomHistoryRequest request) {
-        multiplayerService.roomHistory(principal.getName(), request);
+        multiplayerService.roomHistory(sessionKey(principal), request);
     }
 
     @MessageMapping("leaveRoom")
     public void leaveRoom(Principal principal,
                           @Payload LeaveRoomRequest request) {
-        multiplayerService.leaveRoom(principal.getName(), request);
+        multiplayerService.leaveRoom(sessionKey(principal), request);
     }
 
     @MessageMapping("roomParticipants")
     public void roomParticipants(Principal principal,
                                  @Payload RoomParticipantsRequest request) {
-        multiplayerService.roomParticipants(principal.getName(), request);
+        multiplayerService.roomParticipants(sessionKey(principal), request);
     }
 
     @MessageMapping("kickPlayer")
     public void kickPlayer(Principal principal,
                            @Payload KickPlayerRequest request) {
-        multiplayerService.kickPlayer(principal.getName(), request);
+        multiplayerService.kickPlayer(sessionKey(principal), request);
     }
 
     @MessageMapping("deleteRoom")
     public void deleteRoom(Principal principal,
                            @Payload DeleteRoomRequest request) {
-        multiplayerService.deleteRoom(principal.getName(), request);
+        multiplayerService.deleteRoom(sessionKey(principal), request);
     }
 
     @MessageMapping("startRoomGame")
     public void startRoomGame(Principal principal,
                               @Payload StartRoomGameRequest request) {
-        log.info("WS startRoomGame from session={}, roomCode={}",
-                principal != null ? principal.getName() : null,
+        log.info("WS startRoomGame from session={}, roomCode={}", sessionKey(principal),
                 request != null ? request.roomCode() : null);
-        multiplayerService.startRoomGame(principal.getName(), request);
+        multiplayerService.startRoomGame(sessionKey(principal), request);
+    }
+
+    private String sessionKey(Principal principal) {
+        return principal == null ? null : principal.getName();
     }
 }

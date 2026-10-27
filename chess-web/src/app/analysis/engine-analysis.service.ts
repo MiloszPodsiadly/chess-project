@@ -33,6 +33,7 @@ export class EngineAnalysisService {
   readonly depth$ = new BehaviorSubject<number | null>(null);
   readonly nodes$ = new BehaviorSubject<number | null>(null);
   readonly nps$ = new BehaviorSubject<number | null>(null);
+  readonly timeMillis$ = new BehaviorSubject<number | null>(null);
 
   setFlavor(flavor: BrowserEngineFlavor) {
     this.flavor = flavor;
@@ -57,6 +58,7 @@ export class EngineAnalysisService {
     this.depth$.next(null);
     this.nodes$.next(null);
     this.nps$.next(null);
+    this.timeMillis$.next(null);
     const requestId = ++this.requestId;
     this.status$.next('loading');
     void this.engine.search(fen, { depth, movetime, multiPv: 5, flavor: this.flavor },
@@ -136,6 +138,11 @@ export class EngineAnalysisService {
     }));
     this.lines = mapped.slice(0, 5);
     this.lines$.next([...this.lines]);
+    this.depth$.next(analysis.depth);
+    this.nodes$.next(analysis.nodes);
+    this.timeMillis$.next(analysis.timeMillis);
+    this.nps$.next(analysis.timeMillis > 0
+      ? Math.round(analysis.nodes * 1000 / analysis.timeMillis) : null);
   }
 
   useLocalAnalysis() {
@@ -145,6 +152,10 @@ export class EngineAnalysisService {
     this.bestMove$.next(null);
     this.bestMoveSan$.next(null);
     this.lines$.next([]);
+    this.depth$.next(null);
+    this.nodes$.next(null);
+    this.nps$.next(null);
+    this.timeMillis$.next(null);
   }
 
   private handleInfo(line: string) {
@@ -158,6 +169,7 @@ export class EngineAnalysisService {
     const multiPvIdx = tokens.indexOf('multipv');
     const nodesIdx = tokens.indexOf('nodes');
     const npsIdx = tokens.indexOf('nps');
+    const timeIdx = tokens.indexOf('time');
     if (scoreIdx === -1 || pvIdx === -1) {
       return;
     }
@@ -180,6 +192,10 @@ export class EngineAnalysisService {
       if (!Number.isNaN(npsValue)) {
         this.nps$.next(npsValue);
       }
+    }
+    if (timeIdx !== -1) {
+      const timeValue = Number(tokens[timeIdx + 1]);
+      if (!Number.isNaN(timeValue)) this.timeMillis$.next(timeValue);
     }
     let score = '';
     if (tokens[scoreIdx + 1] === 'cp') {

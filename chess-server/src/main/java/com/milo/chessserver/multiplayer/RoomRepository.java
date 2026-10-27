@@ -2,8 +2,10 @@ package com.milo.chessserver.multiplayer;
 
 import com.milo.chessdomain.multiplayer.RoomStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 import java.util.List;
 import java.util.Optional;
@@ -11,6 +13,10 @@ import java.util.UUID;
 
 public interface RoomRepository extends JpaRepository<RoomEntity, UUID> {
     Optional<RoomEntity> findByRoomCodeIgnoreCase(String roomCode);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from RoomEntity r where upper(r.roomCode) = upper(:roomCode)")
+    Optional<RoomEntity> findLockedByRoomCodeIgnoreCase(@Param("roomCode") String roomCode);
     List<RoomEntity> findByIsPublicTrueAndStatus(RoomStatus status);
     List<RoomEntity> findByIsPublicTrueAndStatusIn(List<RoomStatus> status);
     List<RoomEntity> findByHostUserIdAndStatus(Long hostUserId, RoomStatus status);

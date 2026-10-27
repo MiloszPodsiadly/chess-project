@@ -1,26 +1,26 @@
-:host { display: block; color: #e6ebf2; }
-.setup { display: grid; gap: 10px; }
+:host { display: block; color: var(--arena-text); }
+.setup { display: grid; gap: var(--arena-space-3); }
 header { display: flex; align-items: center; gap: 10px; }
-.mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #17684f; font-size: 25px; }
-h2 { margin: 0; font-size: 21px; } p { margin: 2px 0; } header p, small { color: #abb9c6; font-size: 12px; }
+.mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: var(--arena-radius-control); background: linear-gradient(140deg, var(--arena-accent-strong), #0f5c4b); font-size: 25px; }
+h2 { margin: 0; font-size: 21px; } p { margin: 2px 0; } header p, small { color: var(--arena-muted); font-size: 12px; }
 fieldset { min-width: 0; border: 0; margin: 0; padding: 0; } legend { margin-bottom: 5px; font-weight: 700; font-size: 13px; }
 .segments, .levels { display: grid; gap: 6px; }
 .segments { grid-auto-flow: column; grid-auto-columns: 1fr; }
 .levels { grid-template-columns: repeat(4, minmax(0,1fr)); }
 button, select, input { font: inherit; }
-button { min-height: 39px; border-radius: 9px; border: 1px solid #375665; background: #112731; color: #ecf4f6; cursor: pointer; }
-button.active { border-color: #6bcca4; background: #1b5548; }
+button { min-height: 40px; border-radius: var(--arena-radius-control); border: 1px solid var(--arena-control-border); background: var(--arena-control); color: var(--arena-text); cursor: pointer; }
+button.active { border-color: var(--arena-accent); background: rgba(31, 159, 118, .32); }
 .levels button { display: grid; gap: 2px; place-items: center; padding: 4px; font-size: 11px; }
 .levels small { font-size: 10px; white-space: nowrap; }
 label { display: grid; gap: 4px; margin-top: 6px; font-size: 12px; }
-input, select { min-width: 0; width: 100%; box-sizing: border-box; padding: 7px 9px; border-radius: 9px; border: 1px solid #405d6b; background: #0d1b24; color: white; }
+.hint { color: var(--arena-muted); font-size: 11px; line-height: 1.45; margin: 4px 0 0; }
+input, select { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: var(--arena-radius-control); border: 1px solid var(--arena-control-border); background: var(--arena-control); color: var(--arena-text-strong); }
 details { margin-top: 8px; } summary { cursor: pointer; font-size: 12px; } .advanced { display: grid; gap: 5px; padding-top: 5px; }
 .account { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; }
-.start { background: #70cda5; border: 0; color: #0a201a; font-weight: 800; }
-.start:disabled { opacity: .45; cursor: not-allowed; } .error { color: #ffaca8; font-size: 12px; }
-button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.start { background: var(--arena-accent); border: 0; color: var(--arena-accent-ink); font-weight: 800; }
+.start:disabled { opacity: .45; cursor: not-allowed; } .error { color: var(--arena-danger); font-size: 12px; }
 .dialog-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.68); }
-.dialog { position: relative; width: min(420px,100%); max-height: calc(100dvh - 32px); overflow: auto; display: grid; gap: 12px; padding: 20px; box-sizing: border-box; background: #10232c; border: 1px solid #6c9ca8; border-radius: 16px; }
+.dialog { position: relative; width: min(420px,100%); max-height: calc(100dvh - 32px); overflow: auto; display: grid; gap: 12px; padding: 20px; box-sizing: border-box; background: var(--arena-panel); border: 1px solid var(--arena-card-border); border-radius: var(--arena-radius-card); color: var(--arena-text); box-shadow: var(--arena-shadow-card); }
 .close { justify-self: end; width: 36px; }
 @media (max-width: 1100px) { .levels { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (prefers-reduced-motion: reduce) { * { animation: none; transition: none; } }

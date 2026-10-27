@@ -1,0 +1,51 @@
+:host { display: block; min-width: 0; width: 100%; contain: layout style; }
+.arena-animation { margin: 0; position: relative; overflow: hidden; border: 1px solid #365455; border-radius: var(--arena-radius-card, 18px); background: #071420; color: #d9e7dc; }
+.arena-art { position: relative; isolation: isolate; overflow: hidden; aspect-ratio: 10 / 6.8; pointer-events: none; }
+.arena-scene { display: block; width: 100%; height: 100%; }
+.arena-kicker { position: absolute; z-index: 1; top: 7%; left: 7%; right: 7%; display: flex; gap: 10px; align-items: center; font: 500 clamp(10px, 1.1vw, 13px)/1.4 var(--arena-font, sans-serif); letter-spacing: .2em; text-transform: uppercase; color: #b0cec5; }
+.arena-kicker span { width: 20px; height: 1px; background: #91bdab; }
+.illustration-note { position: absolute; right: 5%; bottom: 3%; color: #afc0ba; font: 10px/1.4 var(--arena-font, sans-serif); letter-spacing: .07em; }
+.arena-caption { min-height: 40px; box-sizing: border-box; display: flex; justify-content: center; align-items: center; gap: 10px; padding: 9px 16px; border-top: 1px solid #2b494b; background: #10252d; color: #d9e7dc; font: 500 12px/1.5 var(--arena-font, sans-serif); text-align: center; }
+.status-mark { width: 6px; height: 6px; border-radius: 50%; background: #8bc8b3; box-shadow: 0 0 9px #69bca655; flex: 0 0 auto; }
+.mist { animation: mist-drift 23s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+.mist-front { animation-delay: -9s; animation-duration: 29s; }
+.ambient-rays { animation: light-shift 17s ease-in-out infinite alternate; transform-origin: 50% 20%; }
+.distant-flames { animation: lantern-light 11s ease-in-out infinite alternate; }
+.edge-energy { animation: edge-flow 22s linear infinite; opacity: .6; }
+.motes { animation: mist-drift 19s ease-in-out infinite alternate; }
+.waiting-scan, .match-wave { opacity: 0; }
+.state-waiting .waiting-scan { animation: anticipation 4.2s cubic-bezier(.35,0,.65,1) infinite; }
+.state-waiting .arena-caption { color: #c7f0e2; }
+.state-waiting .status-mark { box-shadow: 0 0 12px #70d8b566; }
+.state-reconnecting .ambient-rays, .state-reconnecting .mist, .state-reconnecting .motes, .state-reconnecting .distant-flames, .state-reconnecting .edge-energy { animation: none; opacity: .35; }
+.state-reconnecting .status-mark { background: #ddc392; box-shadow: none; }
+.state-active { border-color: #2b494b; }
+:host(.has-intro) .arena-scene { animation: chamber-reveal 3600ms ease-out backwards; }
+:host(.has-intro) .arena-square { animation: grid-awaken 1500ms ease-out backwards; animation-delay: var(--reveal-delay); }
+:host(.has-intro) .piece-reveal { animation: pieces-awaken 1500ms cubic-bezier(.2,.75,.3,1) backwards; animation-delay: var(--reveal-delay); }
+:host(.is-match) .match-wave { animation: match-wave 1500ms cubic-bezier(.2,.65,.3,1) both; }
+:host(.is-match) .champion-white { animation: white-salute 1500ms cubic-bezier(.22,.8,.25,1) both; }
+:host(.is-match) .champion-black { animation: black-salute 1500ms cubic-bezier(.22,.8,.25,1) both; }
+:host(.is-match) .edge-energy { animation: match-edge 1500ms ease-out both; stroke-dasharray: none; }
+:host(.is-match) .arena-caption { color: #f2e1b6; }
+:host(.is-match) .status-mark { background: #e0c489; }
+:host(.is-paused) *, :host(.is-paused) *::before, :host(.is-paused) *::after { animation-play-state: paused !important; }
+:host(.motion-reduced) * { animation: none !important; }
+:host([data-variant="LOBBY"]) .arena-art { aspect-ratio: 950 / 550; }
+:host([data-variant="LOBBY"]) .arena-kicker { top: 6%; font-size: 10px; }
+:host([data-variant="COMPACT"]) .arena-art { aspect-ratio: 840 / 450; }
+:host([data-variant="COMPACT"]) .arena-kicker { display: none; }
+@keyframes chamber-reveal { from { opacity: .45; } to { opacity: 1; } }
+@keyframes grid-awaken { from { stroke-opacity: .05; opacity: .65; } to { stroke-opacity: 1; opacity: 1; } }
+@keyframes pieces-awaken { from { opacity: .2; transform: translateY(-9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes mist-drift { from { transform: translate(-8px, 0); } to { transform: translate(12px, -4px); } }
+@keyframes light-shift { from { opacity: .4; transform: translateX(-8px); } to { opacity: .85; transform: translateX(8px); } }
+@keyframes lantern-light { from { opacity: .65; } to { opacity: .95; } }
+@keyframes edge-flow { to { stroke-dashoffset: -1079; } }
+@keyframes anticipation { 0% { opacity: 0; transform: translateX(-220px); } 20%, 65% { opacity: 1; } 90%, 100% { opacity: 0; transform: translateX(800px); } }
+@keyframes match-wave { 0% { opacity: 0; transform: translateX(-300px); } 30%, 65% { opacity: 1; } 100% { opacity: 0; transform: translateX(850px); } }
+@keyframes white-salute { 0%, 100% { transform: translate(0, 0); } 45% { transform: translate(5px, -6px); } }
+@keyframes black-salute { 0%, 100% { transform: translate(0, 0); } 45% { transform: translate(-5px, -6px); } }
+@keyframes match-edge { 0%, 100% { opacity: .55; } 45% { opacity: 1; stroke-width: 3; } }
+@media (max-width: 600px) { .arena-kicker { font-size: 10px; letter-spacing: .15em; } .arena-caption { font-size: 11px; } .ambient-rays, .motes { animation: none; } .illustration-note { font-size: 9px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

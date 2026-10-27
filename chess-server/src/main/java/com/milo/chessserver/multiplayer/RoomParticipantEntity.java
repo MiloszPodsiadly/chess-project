@@ -1,5 +1,6 @@
 package com.milo.chessserver.multiplayer;
 
+import com.milo.chessdomain.multiplayer.RoomLifecycleEventType;
 import com.milo.chessserver.user.UserEntity;
 import jakarta.persistence.*;
 
@@ -29,11 +30,18 @@ public class RoomParticipantEntity {
     @Column(name = "status", nullable = false)
     private RoomParticipantStatus status = RoomParticipantStatus.ACTIVE;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "last_lifecycle_event")
+    private RoomLifecycleEventType lastLifecycleEvent = RoomLifecycleEventType.ROOM_OPEN;
+
     @Column(name = "joined_at", nullable = false)
     private Instant joinedAt = Instant.now();
 
     @Column(name = "left_at")
     private Instant leftAt;
+
+    @Column(name = "recovery_token_hash", unique = true, length = 64)
+    private String recoveryTokenHash;
 
     public Long getId() {
         return id;
@@ -71,6 +79,14 @@ public class RoomParticipantEntity {
         this.status = status;
     }
 
+    public RoomLifecycleEventType getLastLifecycleEvent() {
+        return lastLifecycleEvent;
+    }
+
+    public void setLastLifecycleEvent(RoomLifecycleEventType lastLifecycleEvent) {
+        this.lastLifecycleEvent = lastLifecycleEvent;
+    }
+
     public Instant getJoinedAt() {
         return joinedAt;
     }
@@ -85,5 +101,13 @@ public class RoomParticipantEntity {
 
     public void setLeftAt(Instant leftAt) {
         this.leftAt = leftAt;
+    }
+
+    public String getRecoveryTokenHash() {
+        return recoveryTokenHash;
+    }
+
+    public void setRecoveryTokenHash(String recoveryTokenHash) {
+        this.recoveryTokenHash = recoveryTokenHash;
     }
 }

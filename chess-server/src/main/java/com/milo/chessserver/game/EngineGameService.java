@@ -68,6 +68,7 @@ public class EngineGameService {
                                              TimeControlType timeControlType,
                                              EngineStrength.Mode requestedMode,
                                              EngineStrength.Preset preset) {
+        EngineStrength.Preset selectedPreset = preset == null ? EngineStrength.Preset.STRONG : preset;
         EngineStrength.Mode mode = requestedMode == null
                 ? (engineElo < 1320 ? EngineStrength.Mode.BEGINNER : EngineStrength.Mode.TRAINING)
                 : requestedMode;
@@ -75,11 +76,9 @@ public class EngineGameService {
             throw new IllegalArgumentException("Analysis is not a gameplay mode");
         }
         if (mode == EngineStrength.Mode.TRAINING) {
-            EngineStrength.training(engineElo, 1);
+            EngineStrength.training(engineElo, selectedPreset.budgetMs());
         } else if (mode == EngineStrength.Mode.BEGINNER) {
             EngineStrength.beginner(engineElo, 1, 1, 1);
-        } else if (preset == null) {
-            throw new IllegalArgumentException("Full-strength preset is required");
         }
 
         UUID id = UUID.randomUUID();
@@ -91,7 +90,7 @@ public class EngineGameService {
             game.setVariant(GameVariant.STANDARD);
             game.setEngineElo(engineElo);
             game.setEngineMode(mode);
-            game.setEnginePreset(mode == EngineStrength.Mode.FULL_STRENGTH ? preset : null);
+            game.setEnginePreset(mode == EngineStrength.Mode.BEGINNER ? null : selectedPreset);
             game.setCurrentFen(START_FEN);
             game.setSideToMove(Color.WHITE);
             game.setTimeControlType(timeControlType == null ? TimeControlType.RAPID : timeControlType);
@@ -266,7 +265,8 @@ public class EngineGameService {
                 game.getEngineError(),
                 game.getEngineMode() == null ? null : game.getEngineMode().name(),
                 game.getEnginePreset() == null ? null : game.getEnginePreset().name(),
-                game.getEngineElo(),
+                game.getEngineMode() == EngineStrength.Mode.FULL_STRENGTH ? null : game.getEngineElo(),
+                configuredEngineTimeBudgetMs(game),
                 game.getWhitePlayer() != null ? Color.WHITE : Color.BLACK,
                 game.getEngineExecutionId()
         );
@@ -437,9 +437,25 @@ public class EngineGameService {
 
     private EngineConfig engineConfig(GameEntity game, Color side) {
         if (game.getEngineMode() == EngineStrength.Mode.FULL_STRENGTH) {
-            return EngineConfig.fullStrength(game.getEnginePreset(), side);
+            return EngineConfig.fullStrength(selectedPreset(game), side);
+        }
+        if (game.getEngineMode() == EngineStrength.Mode.TRAINING) {
+            return EngineConfigMapper.toEngineConfig(game.getEngineElo(), side,
+                    selectedPreset(game).budgetMs());
         }
         return EngineConfigMapper.toEngineConfig(game.getEngineElo(), side);
+    }
+
+    private Long configuredEngineTimeBudgetMs(GameEntity game) {
+        if (game.getEngineMode() == EngineStrength.Mode.TRAINING
+                || game.getEngineMode() == EngineStrength.Mode.FULL_STRENGTH) {
+            return selectedPreset(game).budgetMs();
+        }
+        return null;
+    }
+
+    private EngineStrength.Preset selectedPreset(GameEntity game) {
+        return game.getEnginePreset() == null ? EngineStrength.Preset.STRONG : game.getEnginePreset();
     }
 
     private void checkTimeoutBeforeMove(GameEntity game) {

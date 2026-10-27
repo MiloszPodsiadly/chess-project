@@ -33,7 +33,7 @@ public class GameService {
 
     @Transactional
     public GameEntity applyMove(UUID gameId, MoveDto moveDto) {
-        GameEntity game = gameRepository.findById(gameId).orElseThrow();
+        GameEntity game = gameRepository.findLockedById(gameId).orElseThrow();
         if (game.getResult() != GameResult.ONGOING) {
             return game;
         }
@@ -41,6 +41,49 @@ public class GameService {
         MoveDto effectiveMove = moveDto.playerColor() == game.getSideToMove()
                 ? moveDto
                 : new MoveDto(moveDto.from(), moveDto.to(), moveDto.promotion(), game.getSideToMove());
+
+        return applyValidatedMove(game, gameId, effectiveMove, Instant.now());
+    }
+
+    @Transactional
+    public MultiplayerMoveResult applyMultiplayerMove(UUID gameId,
+                                                       MoveDto requestedMove,
+                                                       Color authorizedColor,
+                                                       Instant now) {
+        GameEntity game = gameRepository.findLockedById(gameId).orElseThrow();
+        if (game.getResult() != GameResult.ONGOING) {
+            return new MultiplayerMoveResult(game, false, "game_finished");
+        }
+        if (authorizedColor == null || authorizedColor != game.getSideToMove()) {
+            return new MultiplayerMoveResult(game, false, "not_your_turn");
+        }
+        if (requestedMove == null || requestedMove.from() == null || requestedMove.to() == null) {
+            return new MultiplayerMoveResult(game, false, "malformed_move");
+        }
+
+        if (game.getTimeControlType() != TimeControlType.UNTIMED
+                && clockService.remainingAfterTick(game, authorizedColor, now) <= 0L) {
+            if (authorizedColor == Color.WHITE) {
+                game.setWhiteTimeLeftMs(0L);
+                game.setResult(GameResult.BLACK_WIN);
+            } else {
+                game.setBlackTimeLeftMs(0L);
+                game.setResult(GameResult.WHITE_WIN);
+            }
+            game.setEndReason(GameEndReason.TIME_OUT);
+            game.setFinishedAt(now);
+            game.setLastMoveAt(now);
+            gameRepository.save(game);
+            return new MultiplayerMoveResult(game, false, "time_out");
+        }
+
+        MoveDto authoritativeMove = new MoveDto(
+                requestedMove.from(), requestedMove.to(), requestedMove.promotion(), authorizedColor);
+        GameEntity updated = applyValidatedMove(game, gameId, authoritativeMove, now);
+        return new MultiplayerMoveResult(updated, true, null);
+    }
+
+    private GameEntity applyValidatedMove(GameEntity game, UUID gameId, MoveDto effectiveMove, Instant now) {
 
         List<String> fenHistory = new java.util.ArrayList<>(moveRepository.findFenAfterMoveByGameIdOrderByMoveNumberAsc(gameId));
         if (game.getVariant() == com.milo.chessdomain.GameVariant.STANDARD) {
@@ -54,7 +97,6 @@ public class GameService {
             throw new IllegalArgumentException("Illegal move");
         }
 
-        Instant now = Instant.now();
         clockService.applyMove(game, effectiveMove.playerColor(), now);
 
         game.setCurrentFen(validation.fenAfterMove());
@@ -79,6 +121,8 @@ public class GameService {
         persistMove(game, effectiveMove, validation.fenAfterMove(), now);
         return gameRepository.save(game);
     }
+
+    public record MultiplayerMoveResult(GameEntity game, boolean accepted, String rejectionReason) {}
 
     public List<GameMoveEntity> loadMoves(UUID gameId) {
         return moveRepository.findByGameIdOrderByMoveNumberAsc(gameId);

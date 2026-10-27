@@ -8,6 +8,7 @@ public record PublicRoomDto(
         String roomCode,
         String name,
         String hostUsername,
+        Long hostUserId,
         TimeControlType timeControlType,
         Instant createdAt,
         RoomStatus status,

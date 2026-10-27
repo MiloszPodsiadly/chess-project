@@ -12,20 +12,20 @@ import java.time.Duration;
 public class MatchmakingCleanupScheduler {
 
     private final MatchmakingService matchmakingService;
-    private final RoomService roomService;
+    private final MultiplayerService multiplayerService;
     private final long roomTtlMinutes;
 
     public MatchmakingCleanupScheduler(MatchmakingService matchmakingService,
-                                       RoomService roomService,
+                                       MultiplayerService multiplayerService,
                                        @Value("${chess.matchmaking.room-ttl-minutes:10}") long roomTtlMinutes) {
         this.matchmakingService = matchmakingService;
-        this.roomService = roomService;
+        this.multiplayerService = multiplayerService;
         this.roomTtlMinutes = roomTtlMinutes;
     }
 
     @Scheduled(fixedDelayString = "${chess.matchmaking.cleanup-ms:60000}")
     public void cleanup() {
-        matchmakingService.cleanup(Duration.ofMinutes(30), Duration.ofMinutes(5));
-        roomService.cleanupOldRooms(Duration.ofMinutes(roomTtlMinutes));
+        matchmakingService.cleanup(Duration.ofMinutes(5));
+        multiplayerService.cleanupOldRooms(Duration.ofMinutes(roomTtlMinutes));
     }
 }

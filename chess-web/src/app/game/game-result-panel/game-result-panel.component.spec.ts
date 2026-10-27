@@ -14,6 +14,7 @@ describe('GameResultPanelComponent', () => {
     const panel = new GameResultPanelComponent();
     panel.outcome = outcome('WHITE_WIN', 'WIN', 'CHECKMATE');
     expect(panel.title).toBe('Victory!');
+    expect(panel.reason).toBe('Checkmate');
     expect(panel.notation).toBe('1–0');
     panel.outcome = outcome('BLACK_WIN', 'LOSS', 'RESIGNATION');
     expect(panel.title).toBe('Defeat');
@@ -30,5 +31,35 @@ describe('GameResultPanelComponent', () => {
     panel.outcome = outcome('WHITE_WIN', 'NEUTRAL', 'TIME_OUT');
     expect(panel.title).toBe('White wins');
     expect(panel.reason).toBe('Time expired');
+  });
+
+  it('maps each multiplayer terminal reason to its result label', () => {
+    const panel = new GameResultPanelComponent();
+    panel.mode = 'multiplayer';
+    const cases: Array<[GameOutcome['result'], GameOutcome['perspective'], GameOutcome['endReason'], string]> = [
+      ['WHITE_WIN', 'WIN', 'CHECKMATE', 'Checkmate'],
+      ['DRAW', 'DRAW', 'STALEMATE', 'Stalemate'],
+      ['BLACK_WIN', 'LOSS', 'RESIGNATION', 'Resignation'],
+      ['WHITE_WIN', 'WIN', 'TIME_OUT', 'Time expired'],
+      ['DRAW', 'DRAW', 'AGREED_DRAW', 'Draw by agreement'],
+      ['BLACK_WIN', 'LOSS', 'DISCONNECT_TIMEOUT', 'Opponent did not reconnect in time']
+    ];
+
+    for (const [result, perspective, endReason, label] of cases) {
+      panel.outcome = outcome(result, perspective, endReason);
+      expect(panel.reason).toBe(label);
+      expect(panel.playLabel).toBe('Back to lobby');
+    }
+  });
+
+  it('uses the shared lobby action and disconnect reason for multiplayer results', () => {
+    const panel = new GameResultPanelComponent();
+    panel.mode = 'multiplayer';
+    panel.outcome = outcome('WHITE_WIN', 'LOSS', 'DISCONNECT_TIMEOUT');
+    expect(panel.playLabel).toBe('Back to lobby');
+    expect(panel.reason).toBe('Opponent did not reconnect in time');
+    panel.lang = 'pl';
+    expect(panel.playLabel).toBe('Wróć do lobby');
+    expect(panel.reason).toBe('Przeciwnik nie wrócił na czas');
   });
 });

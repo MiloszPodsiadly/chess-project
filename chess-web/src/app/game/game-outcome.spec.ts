@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Chess } from 'chess.js';
-import { localOutcome, serverOutcome } from './game-outcome';
+import { localOutcome, multiplayerOutcome, serverOutcome } from './game-outcome';
 import { GameStateService } from './game-state.service';
 
 describe('typed game outcome', () => {
@@ -34,6 +34,17 @@ describe('typed game outcome', () => {
       engineError: null, endReason: 'TIME_OUT' };
     expect(serverOutcome({ ...base, result: 'BLACK_WIN' })?.perspective).toBe('WIN');
     expect(serverOutcome({ ...base, result: 'ONGOING', turnState: 'ENGINE_FAILED' })).toBeNull();
+  });
+
+  it('preserves the multiplayer disconnect timeout reason and player perspective', () => {
+    const game = {
+      gameId: 'online', fen: new Chess().fen(), result: 'BLACK_WIN', endReason: 'DISCONNECT_TIMEOUT', moves: []
+    } as any;
+    expect(multiplayerOutcome(game, 'BLACK')).toMatchObject({
+      perspective: 'WIN', endReason: 'DISCONNECT_TIMEOUT'
+    });
+    expect(multiplayerOutcome(game, 'WHITE')?.perspective).toBe('LOSS');
+    expect(multiplayerOutcome(game, null)?.perspective).toBe('NEUTRAL');
   });
 });
 

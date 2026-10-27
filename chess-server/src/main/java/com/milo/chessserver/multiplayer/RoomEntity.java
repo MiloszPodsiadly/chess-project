@@ -2,6 +2,7 @@ package com.milo.chessserver.multiplayer;
 
 import com.milo.chessdomain.TimeControlType;
 import com.milo.chessdomain.multiplayer.RoomStatus;
+import com.milo.chessdomain.multiplayer.RoomClosureReason;
 import com.milo.chessserver.user.UserEntity;
 import jakarta.persistence.*;
 
@@ -41,6 +42,13 @@ public class RoomEntity {
 
     @Column(name = "game_id")
     private UUID gameId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "close_reason")
+    private RoomClosureReason closeReason;
+
+    @Column(name = "closed_at")
+    private Instant closedAt;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
@@ -114,6 +122,22 @@ public class RoomEntity {
 
     public UUID getGameId() {
         return gameId;
+    }
+
+    public RoomClosureReason getCloseReason() {
+        return closeReason;
+    }
+
+    public void setCloseReason(RoomClosureReason closeReason) {
+        this.closeReason = closeReason;
+    }
+
+    public Instant getClosedAt() {
+        return closedAt;
+    }
+
+    public void setClosedAt(Instant closedAt) {
+        this.closedAt = closedAt;
     }
 
     public void setGameId(UUID gameId) {

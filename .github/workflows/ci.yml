@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Java 21 / Gradle)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Compile and run all backend tests
+        run: ./gradlew test --no-daemon
+
+      - name: Upload backend test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-reports
+          path: |
+            **/build/reports/tests/test/**
+            **/build/test-results/test/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  frontend:
+    name: Frontend (Node 20 / Angular)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: chess-web/package-lock.json
+
+      - name: Pin npm to the project version
+        run: npm install --global npm@11.6.1
+
+      - name: Install from the lockfile
+        run: npm ci
+        working-directory: chess-web
+
+      - name: Run Angular unit tests
+        run: npm test -- --watch=false
+        working-directory: chess-web
+
+      - name: Build production bundle and report budgets
+        run: npm run build -- --stats-json
+        working-directory: chess-web
+
+      - name: Verify Stockfish 19 runtime and assets
+        run: npm run test:engine
+        working-directory: chess-web
+
+      - name: Verify the Stockfish license is included in production assets
+        run: test -s dist/chess-web/browser/stockfish/Copying.txt
+        working-directory: chess-web

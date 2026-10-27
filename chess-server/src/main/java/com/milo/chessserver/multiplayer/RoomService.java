@@ -3,6 +3,7 @@ package com.milo.chessserver.multiplayer;
 import com.milo.chessdomain.TimeControlType;
 import com.milo.chessdomain.multiplayer.*;
 import com.milo.chessserver.user.UserEntity;
+import com.milo.chessserver.user.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,17 +24,20 @@ public class RoomService {
     private final RoomInviteRepository inviteRepository;
     private final RoomMessageRepository messageRepository;
     private final PasswordEncoder passwordEncoder;
+    private final UserRepository userRepository;
 
     public RoomService(RoomRepository roomRepository,
                        RoomParticipantRepository participantRepository,
                        RoomInviteRepository inviteRepository,
                        RoomMessageRepository messageRepository,
-                       PasswordEncoder passwordEncoder) {
+                       PasswordEncoder passwordEncoder,
+                       UserRepository userRepository) {
         this.roomRepository = roomRepository;
         this.participantRepository = participantRepository;
         this.inviteRepository = inviteRepository;
         this.messageRepository = messageRepository;
         this.passwordEncoder = passwordEncoder;
+        this.userRepository = userRepository;
     }
 
     @Transactional
@@ -41,6 +45,7 @@ public class RoomService {
         if (host == null) {
             return new CreateRoomResult(null, "no_host");
         }
+        host = lockUser(host);
         if (isActiveInOtherRoom(host, null)) {
             return new CreateRoomResult(null, "already_in_room");
         }
@@ -70,9 +75,12 @@ public class RoomService {
         hostEntry.setUser(host);
         hostEntry.setRole(RoomParticipantRole.HOST);
         hostEntry.setStatus(RoomParticipantStatus.ACTIVE);
+        hostEntry.setLastLifecycleEvent(RoomLifecycleEventType.ROOM_OPEN);
+        String recoveryToken = SecureTokenGenerator.generate();
+        hostEntry.setRecoveryTokenHash(SecureTokenGenerator.hash(recoveryToken));
         participantRepository.save(hostEntry);
 
-        return new CreateRoomResult(room, null);
+        return new CreateRoomResult(room, null, recoveryToken);
     }
 
     @Transactional
@@ -80,7 +88,8 @@ public class RoomService {
         if (guest == null || request == null || request.roomCode() == null) {
             return new JoinRoomResult(null, "room_not_found");
         }
-        RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(request.roomCode())
+        guest = lockUser(guest);
+        RoomEntity room = roomRepository.findLockedByRoomCodeIgnoreCase(request.roomCode())
                 .orElse(null);
         if (room == null || room.getStatus() != RoomStatus.OPEN) {
             return new JoinRoomResult(null, "room_not_found");
@@ -110,9 +119,12 @@ public class RoomService {
         participant.setUser(guest);
         participant.setRole(RoomParticipantRole.PLAYER);
         participant.setStatus(RoomParticipantStatus.ACTIVE);
+        participant.setLastLifecycleEvent(RoomLifecycleEventType.ROOM_OPEN);
         participant.setJoinedAt(Instant.now());
+        String recoveryToken = SecureTokenGenerator.generate();
+        participant.setRecoveryTokenHash(SecureTokenGenerator.hash(recoveryToken));
         participantRepository.save(participant);
-        return new JoinRoomResult(room, null);
+        return new JoinRoomResult(room, null, recoveryToken);
     }
 
     @Transactional
@@ -120,7 +132,8 @@ public class RoomService {
         if (user == null || request == null || request.roomCode() == null) {
             return new JoinRoomResult(null, "room_not_found");
         }
-        RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(request.roomCode())
+        user = lockUser(user);
+        RoomEntity room = roomRepository.findLockedByRoomCodeIgnoreCase(request.roomCode())
                 .orElse(null);
         if (room == null || !room.isPublic()) {
             return new JoinRoomResult(null, "room_not_found");
@@ -137,9 +150,35 @@ public class RoomService {
         participant.setUser(user);
         participant.setRole(RoomParticipantRole.SPECTATOR);
         participant.setStatus(RoomParticipantStatus.ACTIVE);
+        participant.setLastLifecycleEvent(RoomLifecycleEventType.ROOM_OPEN);
         participant.setJoinedAt(Instant.now());
+        String recoveryToken = SecureTokenGenerator.generate();
+        participant.setRecoveryTokenHash(SecureTokenGenerator.hash(recoveryToken));
         participantRepository.save(participant);
-        return new JoinRoomResult(room, null);
+        return new JoinRoomResult(room, null, recoveryToken);
+    }
+
+    @Transactional
+    public RoomRecoveryResult recoverRoomSession(String recoveryToken) {
+        if (recoveryToken == null || recoveryToken.isBlank() || recoveryToken.length() > 64) {
+            return new RoomRecoveryResult(null, null);
+        }
+        RoomParticipantEntity participant = participantRepository
+                .findByRecoveryTokenHash(SecureTokenGenerator.hash(recoveryToken)).orElse(null);
+        if (participant == null || participant.getUser() == null) {
+            return new RoomRecoveryResult(null, null);
+        }
+        boolean recoverable = participant.getStatus() == RoomParticipantStatus.ACTIVE
+                || participant.getStatus() == RoomParticipantStatus.KICKED
+                || participant.getStatus() == RoomParticipantStatus.LEFT
+                && participant.getLastLifecycleEvent() == RoomLifecycleEventType.ROOM_CLOSED;
+        if (!recoverable) {
+            return new RoomRecoveryResult(null, null);
+        }
+        String rotatedToken = SecureTokenGenerator.generate();
+        participant.setRecoveryTokenHash(SecureTokenGenerator.hash(rotatedToken));
+        participantRepository.save(participant);
+        return new RoomRecoveryResult(participant.getUser(), rotatedToken);
     }
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
@@ -149,7 +188,8 @@ public class RoomService {
                 .map(room -> new PublicRoomDto(
                         room.getRoomCode(),
                         room.getName(),
-                        room.getHostUser() != null ? room.getHostUser().getUsername() : null,
+                        room.getHostUser() != null ? room.getHostUser().getDisplayName() : null,
+                        room.getHostUser() != null ? room.getHostUser().getId() : null,
                         room.getTimeControlType(),
                         room.getCreatedAt(),
                         room.getStatus(),
@@ -196,13 +236,16 @@ public class RoomService {
         RoomMessageEntity message = new RoomMessageEntity();
         message.setRoom(room);
         message.setUser(user);
-        message.setUsername(user.getUsername());
+        message.setUsername(user.getDisplayName());
         message.setMessage(request.message().trim());
         messageRepository.save(message);
         return new RoomMessageDto(room.getRoomCode(), message.getUsername(), message.getMessage(), message.getCreatedAt());
     }
 
-    public List<RoomMessageDto> roomHistory(String roomCode) {
+    public List<RoomMessageDto> roomHistory(UserEntity user, String roomCode) {
+        if (user == null || roomCode == null || !isActiveRoomParticipant(user.getId(), roomCode)) {
+            return null;
+        }
         RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElse(null);
         if (room == null) {
             return List.of();
@@ -215,12 +258,44 @@ public class RoomService {
     }
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
-    public RoomParticipantsDto roomParticipants(String roomCode) {
+    public RoomParticipantsDto roomParticipants(UserEntity user, String roomCode) {
+        if (user == null || user.getId() == null || roomCode == null || roomCode.isBlank()) {
+            return null;
+        }
         RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElse(null);
         if (room == null) {
             return null;
         }
-        List<RoomParticipantDto> participants = participantRepository.findByRoomAndStatus(room, RoomParticipantStatus.ACTIVE)
+        RoomParticipantEntity member = participantRepository.findByRoomAndUserId(room, user.getId()).orElse(null);
+        if (member == null) {
+            return null;
+        }
+        boolean active = member.getStatus() == RoomParticipantStatus.ACTIVE;
+        boolean terminalRecipient = member.getStatus() == RoomParticipantStatus.KICKED
+                || member.getStatus() == RoomParticipantStatus.LEFT
+                && member.getLastLifecycleEvent() == RoomLifecycleEventType.ROOM_CLOSED;
+        if (!active && !terminalRecipient) {
+            return null;
+        }
+        List<RoomParticipantDto> participants = active ? activeParticipantDtos(room) : List.of();
+        return new RoomParticipantsDto(room.getRoomCode(), participants, room.getStatus(),
+                room.getCloseReason(), member.getLastLifecycleEvent(),
+                room.getStatus() == RoomStatus.CLOSED ? room.getClosedAt() : member.getLeftAt());
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public RoomParticipantsDto roomParticipantsForBroadcast(String roomCode) {
+        if (roomCode == null || roomCode.isBlank()) return null;
+        RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElse(null);
+        if (room == null) {
+            return null;
+        }
+        return new RoomParticipantsDto(room.getRoomCode(), activeParticipantDtos(room),
+                room.getStatus(), room.getCloseReason(), null, null);
+    }
+
+    private List<RoomParticipantDto> activeParticipantDtos(RoomEntity room) {
+        return participantRepository.findByRoomAndStatus(room, RoomParticipantStatus.ACTIVE)
                 .stream()
                 .map(p -> {
                     String status = p.getStatus() != null ? p.getStatus().name() : null;
@@ -229,13 +304,13 @@ public class RoomService {
                         status = "PENDING";
                     }
                     return new RoomParticipantDto(
-                            p.getUser() != null ? p.getUser().getUsername() : null,
+                            p.getUser() != null ? p.getUser().getId() : null,
+                            p.getUser() != null ? p.getUser().getDisplayName() : null,
                             p.getRole() != null ? p.getRole().name() : null,
                             status
                     );
                 })
                 .collect(Collectors.toList());
-        return new RoomParticipantsDto(room.getRoomCode(), participants);
     }
 
     @Transactional
@@ -245,6 +320,8 @@ public class RoomService {
         }
         room.setStatus(RoomStatus.IN_GAME);
         room.setGameId(gameId);
+        room.setCloseReason(null);
+        room.setClosedAt(null);
         room.setUpdatedAt(Instant.now());
         roomRepository.save(room);
     }
@@ -259,8 +336,14 @@ public class RoomService {
             return;
         }
         RoomEntity entity = room.get();
+        if (entity.getStatus() == RoomStatus.CLOSED) {
+            return;
+        }
+        Instant now = Instant.now();
         entity.setStatus(RoomStatus.CLOSED);
-        entity.setUpdatedAt(Instant.now());
+        entity.setCloseReason(RoomClosureReason.GAME_FINISHED);
+        entity.setClosedAt(now);
+        entity.setUpdatedAt(now);
         roomRepository.save(entity);
     }
 
@@ -274,126 +357,131 @@ public class RoomService {
                 .orElse(null);
     }
 
-    @Transactional
-    public void removeRoomsForHost(Long hostUserId) {
-        if (hostUserId == null) {
-            return;
-        }
-        List<RoomEntity> rooms = roomRepository.findByHostUserIdAndStatus(hostUserId, RoomStatus.OPEN);
-        for (RoomEntity room : rooms) {
-            room.setStatus(RoomStatus.CLOSED);
-            room.setUpdatedAt(Instant.now());
-            roomRepository.save(room);
-        }
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public boolean isActiveRoomParticipant(Long userId, String roomCode) {
+        if (userId == null || roomCode == null || roomCode.isBlank()) return false;
+        RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElse(null);
+        if (room == null) return false;
+        return participantRepository.findByRoomAndUserId(room, userId)
+                .map(participant -> participant.getStatus() == RoomParticipantStatus.ACTIVE)
+                .orElse(false);
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public boolean isActiveParticipantInGame(Long userId, UUID gameId) {
+        if (userId == null || gameId == null) return false;
+        RoomEntity room = roomRepository.findByGameId(gameId).orElse(null);
+        if (room == null) return false;
+        return participantRepository.findByRoomAndUserId(room, userId)
+                .map(participant -> participant.getStatus() == RoomParticipantStatus.ACTIVE)
+                .orElse(false);
     }
 
     @Transactional
-    public List<String> handleDisconnect(UserEntity user) {
+    public List<RoomLifecycleChange> handleDisconnect(UserEntity user) {
         if (user == null) {
             return List.of();
         }
+        user = lockUser(user);
         List<RoomParticipantEntity> participants = participantRepository.findByUserIdAndStatus(user.getId(), RoomParticipantStatus.ACTIVE);
         if (participants.isEmpty()) {
             return List.of();
         }
-        List<String> updated = new java.util.ArrayList<>();
+        List<RoomLifecycleChange> updated = new java.util.ArrayList<>();
         Instant now = Instant.now();
         for (RoomParticipantEntity participant : participants) {
             RoomEntity room = participant.getRoom();
+            if (room != null) {
+                room = roomRepository.findLockedByRoomCodeIgnoreCase(room.getRoomCode()).orElse(room);
+            }
             if (room == null || room.getStatus() != RoomStatus.OPEN) {
                 continue;
             }
             if (participant.getRole() == RoomParticipantRole.HOST) {
-                room.setStatus(RoomStatus.CLOSED);
-                room.setUpdatedAt(now);
-                roomRepository.save(room);
-                List<RoomParticipantEntity> roomParticipants = participantRepository.findByRoomAndStatus(room, RoomParticipantStatus.ACTIVE);
-                for (RoomParticipantEntity roomParticipant : roomParticipants) {
-                    roomParticipant.setStatus(RoomParticipantStatus.LEFT);
-                    roomParticipant.setLeftAt(now);
-                    participantRepository.save(roomParticipant);
-                }
-                updated.add(room.getRoomCode());
+                RoomLifecycleChange change = closeRoom(room, RoomClosureReason.HOST_DISCONNECTED, now);
+                if (change != null) updated.add(change);
                 continue;
             }
             participant.setStatus(RoomParticipantStatus.LEFT);
             participant.setLeftAt(now);
+            participant.setLastLifecycleEvent(RoomLifecycleEventType.PARTICIPANT_LEFT);
             participantRepository.save(participant);
-            updated.add(room.getRoomCode());
+            List<Long> recipients = participantRepository.findByRoomAndStatus(room, RoomParticipantStatus.ACTIVE)
+                    .stream().map(RoomParticipantEntity::getUser).filter(java.util.Objects::nonNull)
+                    .map(UserEntity::getId).filter(java.util.Objects::nonNull).toList();
+            long active = participantRepository.countByRoomAndStatus(room, RoomParticipantStatus.ACTIVE);
+            if (active == 0) {
+                RoomLifecycleChange change = closeRoom(room, RoomClosureReason.NO_ACTIVE_PARTICIPANTS, now);
+                if (change != null) updated.add(change);
+            } else {
+                updated.add(new RoomLifecycleChange(room.getRoomCode(), RoomLifecycleEventType.PARTICIPANT_LEFT,
+                        room.getStatus(), null, user.getId(), recipients, now));
+            }
         }
         return updated;
     }
 
     @Transactional
-    public void leaveRoom(UserEntity user, String roomCode) {
+    public RoomLifecycleChange leaveRoom(UserEntity user, String roomCode) {
         if (user == null || roomCode == null || roomCode.isBlank()) {
-            return;
+            return null;
         }
-        RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElse(null);
+        user = lockUser(user);
+        RoomEntity room = roomRepository.findLockedByRoomCodeIgnoreCase(roomCode).orElse(null);
         if (room == null) {
-            return;
+            return null;
         }
         if (room.getStatus() == RoomStatus.IN_GAME) {
-            return;
+            return null;
         }
         if (room.getHostUser() != null && room.getHostUser().getId().equals(user.getId())) {
-            room.setStatus(RoomStatus.CLOSED);
-            room.setUpdatedAt(Instant.now());
-            roomRepository.save(room);
-            List<RoomParticipantEntity> participants = participantRepository.findByRoomAndStatus(room, RoomParticipantStatus.ACTIVE);
-            for (RoomParticipantEntity participant : participants) {
-                participant.setStatus(RoomParticipantStatus.LEFT);
-                participant.setLeftAt(Instant.now());
-                participantRepository.save(participant);
-            }
-            return;
+            return closeRoom(room, RoomClosureReason.HOST_LEFT, Instant.now());
         }
-        participantRepository.findByRoomAndUserId(room, user.getId()).ifPresent(participant -> {
-            participant.setStatus(RoomParticipantStatus.LEFT);
-            participant.setLeftAt(Instant.now());
-            participantRepository.save(participant);
-        });
+        RoomParticipantEntity member = participantRepository.findByRoomAndUserId(room, user.getId()).orElse(null);
+        if (member == null || member.getStatus() != RoomParticipantStatus.ACTIVE) return null;
+        Instant now = Instant.now();
+        member.setStatus(RoomParticipantStatus.LEFT);
+        member.setLeftAt(now);
+        member.setLastLifecycleEvent(RoomLifecycleEventType.PARTICIPANT_LEFT);
+        member.setRecoveryTokenHash(null);
+        participantRepository.save(member);
         long active = participantRepository.countByRoomAndStatus(room, RoomParticipantStatus.ACTIVE);
         if (active == 0) {
-            room.setStatus(RoomStatus.CLOSED);
-            room.setUpdatedAt(Instant.now());
-            roomRepository.save(room);
+            return closeRoom(room, RoomClosureReason.NO_ACTIVE_PARTICIPANTS, now);
         }
+        List<Long> recipients = participantRepository.findByRoomAndStatus(room, RoomParticipantStatus.ACTIVE)
+                .stream().map(RoomParticipantEntity::getUser).filter(java.util.Objects::nonNull)
+                .map(UserEntity::getId).filter(java.util.Objects::nonNull).toList();
+        return new RoomLifecycleChange(room.getRoomCode(), RoomLifecycleEventType.PARTICIPANT_LEFT,
+                room.getStatus(), null, user.getId(), recipients, now);
     }
 
     @Transactional
-    public boolean deleteRoom(UserEntity user, String roomCode) {
+    public RoomLifecycleChange deleteRoom(UserEntity user, String roomCode) {
         if (user == null || roomCode == null || roomCode.isBlank()) {
-            return false;
+            return null;
         }
-        RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElse(null);
+        user = lockUser(user);
+        RoomEntity room = roomRepository.findLockedByRoomCodeIgnoreCase(roomCode).orElse(null);
         if (room == null) {
-            return false;
+            return null;
         }
         if (room.getHostUser() == null || !room.getHostUser().getId().equals(user.getId())) {
-            return false;
+            return null;
         }
-        if (room.getStatus() == RoomStatus.IN_GAME) {
-            return false;
+        if (room.getStatus() != RoomStatus.OPEN) {
+            return null;
         }
-        room.setStatus(RoomStatus.CLOSED);
-        room.setUpdatedAt(Instant.now());
-        roomRepository.save(room);
-        List<RoomParticipantEntity> participants = participantRepository.findByRoomAndStatus(room, RoomParticipantStatus.ACTIVE);
-        for (RoomParticipantEntity participant : participants) {
-            participant.setStatus(RoomParticipantStatus.LEFT);
-            participant.setLeftAt(Instant.now());
-            participantRepository.save(participant);
-        }
-        return true;
+        return closeRoom(room, RoomClosureReason.HOST_DELETED, Instant.now());
     }
 
     @Transactional
-    public KickResult kickPlayer(UserEntity host, String roomCode, String username) {
-        if (host == null || roomCode == null || roomCode.isBlank() || username == null || username.isBlank()) {
+    public KickResult kickPlayer(UserEntity host, String roomCode, Long userId) {
+        if (host == null || roomCode == null || roomCode.isBlank() || userId == null) {
             return new KickResult(null, "bad_request");
         }
-        RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElse(null);
+        host = lockUser(host);
+        RoomEntity room = roomRepository.findLockedByRoomCodeIgnoreCase(roomCode).orElse(null);
         if (room == null) {
             return new KickResult(null, "room_not_found");
         }
@@ -403,18 +491,24 @@ public class RoomService {
         if (room.getStatus() == RoomStatus.IN_GAME) {
             return new KickResult(null, "room_in_game");
         }
-        RoomParticipantEntity participant = participantRepository.findByRoomAndUserUsernameIgnoreCase(room, username)
-                .orElse(null);
+        RoomParticipantEntity participant = participantRepository.findByRoomAndUserId(room, userId).orElse(null);
         if (participant == null || participant.getStatus() != RoomParticipantStatus.ACTIVE) {
             return new KickResult(null, "not_found");
         }
         if (participant.getRole() == RoomParticipantRole.HOST) {
             return new KickResult(null, "cannot_kick_host");
         }
-        participant.setStatus(RoomParticipantStatus.LEFT);
+        participant.setStatus(RoomParticipantStatus.KICKED);
         participant.setLeftAt(Instant.now());
+        participant.setLastLifecycleEvent(RoomLifecycleEventType.PARTICIPANT_KICKED);
         participantRepository.save(participant);
-        return new KickResult(participant.getUser(), null);
+        List<Long> recipients = participantRepository.findByRoomAndStatus(room, RoomParticipantStatus.ACTIVE)
+                .stream().map(RoomParticipantEntity::getUser).filter(java.util.Objects::nonNull)
+                .map(UserEntity::getId).filter(java.util.Objects::nonNull).toList();
+        RoomLifecycleChange lifecycleChange = new RoomLifecycleChange(room.getRoomCode(),
+                RoomLifecycleEventType.PARTICIPANT_KICKED, room.getStatus(), null,
+                participant.getUser() != null ? participant.getUser().getId() : userId, recipients, Instant.now());
+        return new KickResult(participant.getUser(), null, lifecycleChange);
     }
 
     @Transactional
@@ -422,7 +516,8 @@ public class RoomService {
         if (host == null || roomCode == null || roomCode.isBlank()) {
             return new StartGameResult(null, null, "bad_request");
         }
-        RoomEntity room = roomRepository.findByRoomCodeIgnoreCase(roomCode).orElse(null);
+        host = lockUser(host);
+        RoomEntity room = roomRepository.findLockedByRoomCodeIgnoreCase(roomCode).orElse(null);
         if (room == null) {
             return new StartGameResult(null, null, "room_not_found");
         }
@@ -441,20 +536,50 @@ public class RoomService {
     }
 
     @Transactional
-    public void cleanupOldRooms(java.time.Duration maxAge) {
+    public List<RoomLifecycleChange> cleanupOldRooms(java.time.Duration maxAge) {
         Instant now = Instant.now();
         List<RoomEntity> rooms = roomRepository.findByStatus(RoomStatus.OPEN);
-        for (RoomEntity room : rooms) {
+        List<RoomLifecycleChange> changes = new java.util.ArrayList<>();
+        for (RoomEntity candidate : rooms) {
+            RoomEntity room = roomRepository.findLockedByRoomCodeIgnoreCase(candidate.getRoomCode()).orElse(null);
+            if (room == null || room.getStatus() != RoomStatus.OPEN) {
+                continue;
+            }
             if (room.getCreatedAt() != null && java.time.Duration.between(room.getCreatedAt(), now).compareTo(maxAge) > 0) {
-                long activeHosts = participantRepository.countByRoomAndStatusAndRole(room, RoomParticipantStatus.ACTIVE, RoomParticipantRole.HOST);
-                if (activeHosts > 0) {
-                    continue;
-                }
-                room.setStatus(RoomStatus.CLOSED);
-                room.setUpdatedAt(now);
-                roomRepository.save(room);
+                RoomLifecycleChange change = closeRoom(room, RoomClosureReason.ROOM_EXPIRED, now);
+                if (change != null) changes.add(change);
             }
         }
+        return changes;
+    }
+
+    private RoomLifecycleChange closeRoom(RoomEntity room, RoomClosureReason reason, Instant now) {
+        if (room == null || room.getStatus() == RoomStatus.CLOSED) {
+            return null;
+        }
+        List<RoomParticipantEntity> active = participantRepository.findByRoomAndStatus(room, RoomParticipantStatus.ACTIVE);
+        List<Long> recipients = active.stream().map(RoomParticipantEntity::getUser)
+                .filter(java.util.Objects::nonNull).map(UserEntity::getId)
+                .filter(java.util.Objects::nonNull).toList();
+        room.setStatus(RoomStatus.CLOSED);
+        room.setCloseReason(reason);
+        room.setClosedAt(now);
+        room.setUpdatedAt(now);
+        roomRepository.save(room);
+        for (RoomParticipantEntity participant : participantRepository.findByRoom(room)) {
+            if (participant.getStatus() == RoomParticipantStatus.KICKED
+                    || participant.getRecoveryTokenHash() == null) {
+                continue;
+            }
+            if (participant.getStatus() == RoomParticipantStatus.ACTIVE) {
+                participant.setStatus(RoomParticipantStatus.LEFT);
+                participant.setLeftAt(now);
+            }
+            participant.setLastLifecycleEvent(RoomLifecycleEventType.ROOM_CLOSED);
+            participantRepository.save(participant);
+        }
+        return new RoomLifecycleChange(room.getRoomCode(), RoomLifecycleEventType.ROOM_CLOSED,
+                RoomStatus.CLOSED, reason, null, recipients, now);
     }
 
     private boolean isInviteValid(RoomEntity room, String token) {
@@ -517,11 +642,40 @@ public class RoomService {
         return false;
     }
 
-    public record CreateRoomResult(RoomEntity room, String error) {}
+    private UserEntity lockUser(UserEntity user) {
+        if (user == null || user.getId() == null) {
+            return user;
+        }
+        return userRepository.findLockedById(user.getId()).orElse(user);
+    }
 
-    public record JoinRoomResult(RoomEntity room, String error) {}
+    public record CreateRoomResult(RoomEntity room, String error, String recoveryToken) {
+        public CreateRoomResult(RoomEntity room, String error) {
+            this(room, error, null);
+        }
+    }
 
-    public record KickResult(UserEntity user, String error) {}
+    public record JoinRoomResult(RoomEntity room, String error, String recoveryToken) {
+        public JoinRoomResult(RoomEntity room, String error) {
+            this(room, error, null);
+        }
+    }
+
+    public record RoomRecoveryResult(UserEntity user, String recoveryToken) {}
+
+    public record KickResult(UserEntity user, String error, RoomLifecycleChange lifecycleChange) {
+        public KickResult(UserEntity user, String error) {
+            this(user, error, null);
+        }
+    }
+
+    public record RoomLifecycleChange(String roomCode,
+                                      RoomLifecycleEventType type,
+                                      RoomStatus roomStatus,
+                                      RoomClosureReason closeReason,
+                                      Long participantUserId,
+                                      List<Long> recipientUserIds,
+                                      Instant occurredAt) {}
 
     public record StartGameResult(RoomEntity room, UserEntity guest, String error) {}
 }
