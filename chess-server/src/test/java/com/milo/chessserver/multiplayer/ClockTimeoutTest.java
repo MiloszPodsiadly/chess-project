@@ -18,6 +18,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -69,7 +70,8 @@ class ClockTimeoutTest {
         game.setStartedAt(Instant.now().minusSeconds(60));
         game.setLastMoveAt(Instant.now().minusSeconds(10));
 
-        when(gameRepository.findByResult(GameResult.ONGOING)).thenReturn(List.of(game));
+        when(gameRepository.findIdsByResult(GameResult.ONGOING)).thenReturn(List.of(game.getId()));
+        when(gameRepository.findLockedById(game.getId())).thenReturn(Optional.of(game));
         when(gameRepository.save(any(GameEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         multiplayerService.handleClockTimeouts();

@@ -9,18 +9,20 @@ import java.time.Instant;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Queue;
-import java.util.List;
+import java.util.ArrayDeque;
+import java.util.Iterator;
+import java.util.function.Predicate;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Service
 public class MatchmakingService {
 
     private final SecureRandom random = new SecureRandom();
     private final Map<String, Room> rooms = new ConcurrentHashMap<>();
-    private final Map<TimeControlType, Queue<QueueEntry>> queues = new ConcurrentHashMap<>();
+    private final Map<TimeControlType, ArrayDeque<QueueEntry>> queues = new ConcurrentHashMap<>();
+    private final Map<Long, QueueEntry> queuedByUser = new ConcurrentHashMap<>();
     private final PasswordEncoder passwordEncoder;
+    private static final Duration QUEUE_TTL = Duration.ofMinutes(5);
 
     public MatchmakingService(PasswordEncoder passwordEncoder) {
         this.passwordEncoder = passwordEncoder;
@@ -42,7 +44,7 @@ public class MatchmakingService {
         return code;
     }
 
-    public JoinResult joinRoom(String roomCode, String password) {
+    public synchronized JoinResult joinRoom(String roomCode, String password) {
         if (roomCode == null) {
             return new JoinResult(null, "room_not_found");
         }
@@ -57,24 +59,77 @@ public class MatchmakingService {
                 return new JoinResult(null, "bad_password");
             }
         }
-        rooms.remove(key);
+        if (!rooms.remove(key, room)) {
+            return new JoinResult(null, "room_not_found");
+        }
         return new JoinResult(room, null);
     }
 
-    public QueueEntry enqueue(TimeControlType type, QueueEntry entry) {
-        Queue<QueueEntry> queue = queues.computeIfAbsent(type, k -> new ConcurrentLinkedQueue<>());
-        QueueEntry other = queue.poll();
-        if (other == null) {
-            queue.add(entry);
-            return null;
-        }
-        return other;
+    public synchronized QueueResult enqueueOrMatch(QueueEntry entry) {
+        return enqueueOrMatch(entry, ignored -> true);
     }
 
-    public void cleanup(Duration maxRoomAge, Duration maxQueueAge) {
+    public synchronized QueueResult enqueueOrMatch(QueueEntry entry, Predicate<QueueEntry> eligibleOpponent) {
+        if (entry == null || entry.userId() == null || entry.timeControlType() == null) {
+            throw new IllegalArgumentException("A matchmaking user and time control are required");
+        }
+        removeExpiredQueueEntries(Instant.now());
+        QueueEntry existing = queuedByUser.get(entry.userId());
+        if (existing != null) {
+            return new QueueResult(null, existing, true);
+        }
+
+        ArrayDeque<QueueEntry> queue = queues.computeIfAbsent(entry.timeControlType(), ignored -> new ArrayDeque<>());
+        QueueEntry other;
+        while ((other = queue.pollFirst()) != null) {
+            queuedByUser.remove(other.userId(), other);
+            if (other.userId().equals(entry.userId()) || isExpired(other, Instant.now())
+                    || (eligibleOpponent != null && !eligibleOpponent.test(other))) {
+                continue;
+            }
+            return new QueueResult(other, null, false);
+        }
+        queue.addLast(entry);
+        queuedByUser.put(entry.userId(), entry);
+        return new QueueResult(null, entry, false);
+    }
+
+    /** Compatibility helper for callers that only need the matched opponent. */
+    public synchronized QueueEntry enqueue(TimeControlType type, QueueEntry entry) {
+        QueueEntry normalized = entry == null
+                ? null : new QueueEntry(entry.userId(), type, entry.enqueuedAt());
+        return enqueueOrMatch(normalized).matchedEntry();
+    }
+
+    public synchronized boolean cancel(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        QueueEntry entry = queuedByUser.remove(userId);
+        if (entry == null) {
+            return false;
+        }
+        ArrayDeque<QueueEntry> queue = queues.get(entry.timeControlType());
+        if (queue != null) {
+            queue.remove(entry);
+        }
+        return true;
+    }
+
+    public synchronized void cleanup(Duration maxRoomAge, Duration maxQueueAge) {
         Instant now = Instant.now();
         rooms.values().removeIf(room -> Duration.between(room.createdAt, now).compareTo(maxRoomAge) > 0);
-        queues.values().forEach(queue -> queue.removeIf(entry -> Duration.between(entry.enqueuedAt, now).compareTo(maxQueueAge) > 0));
+        for (ArrayDeque<QueueEntry> queue : queues.values()) {
+            Iterator<QueueEntry> entries = queue.iterator();
+            while (entries.hasNext()) {
+                QueueEntry entry = entries.next();
+                if (entry.enqueuedAt() == null
+                        || Duration.between(entry.enqueuedAt(), now).compareTo(maxQueueAge) > 0) {
+                    entries.remove();
+                    queuedByUser.remove(entry.userId(), entry);
+                }
+            }
+        }
     }
 
     public void removeRoomsForHost(Long hostUserId) {
@@ -82,6 +137,23 @@ public class MatchmakingService {
             return;
         }
         rooms.values().removeIf(room -> hostUserId.equals(room.hostUserId));
+    }
+
+    private void removeExpiredQueueEntries(Instant now) {
+        for (ArrayDeque<QueueEntry> queue : queues.values()) {
+            Iterator<QueueEntry> entries = queue.iterator();
+            while (entries.hasNext()) {
+                QueueEntry entry = entries.next();
+                if (isExpired(entry, now)) {
+                    entries.remove();
+                    queuedByUser.remove(entry.userId(), entry);
+                }
+            }
+        }
+    }
+
+    private boolean isExpired(QueueEntry entry, Instant now) {
+        return entry.enqueuedAt() == null || Duration.between(entry.enqueuedAt(), now).compareTo(QUEUE_TTL) > 0;
     }
 
     private String generateRoomCode() {
@@ -103,6 +175,8 @@ public class MatchmakingService {
                        boolean isPublic) {}
 
     public record QueueEntry(Long userId, TimeControlType timeControlType, Instant enqueuedAt) {}
+
+    public record QueueResult(QueueEntry matchedEntry, QueueEntry queuedEntry, boolean alreadyQueued) {}
 
     public record JoinResult(Room room, String error) {}
 }

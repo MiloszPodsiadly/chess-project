@@ -34,7 +34,7 @@ public class GamePlayerEntity {
     @Column(name = "rating_at_start", nullable = false)
     private int ratingAtStart;
 
-    @Column(name = "reconnect_token", nullable = false, length = 64)
+    @Column(name = "reconnect_token", nullable = false, unique = true, length = 64)
     private String reconnectToken;
 
     @Column(name = "last_seen_at", nullable = false)

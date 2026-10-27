@@ -49,6 +49,7 @@ chess:
     reconnect-timeout-ms: ${RECONNECT_TIMEOUT_MS:600000}
     reconnect-timeout-check-ms: ${RECONNECT_TIMEOUT_CHECK_MS:30000}
     clock-timeout-check-ms: ${CLOCK_TIMEOUT_CHECK_MS:1000}
+    allowed-origins: ${CHESS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:4200}
   analysis:
     enabled: ${CHESS_ANALYSIS_ENABLED:false}
     elo: ${CHESS_ANALYSIS_ELO:1600}

@@ -15,5 +15,6 @@ public record MoveAcceptedEvent(
         long whiteTimeLeftMs,
         long blackTimeLeftMs,
         Instant lastMoveAt,
-        EngineMoveResponseDto analysis
+        EngineMoveResponseDto analysis,
+        Long version
 ) {}

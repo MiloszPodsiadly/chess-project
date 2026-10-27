@@ -23,6 +23,7 @@ public record GameStateDto(
         String engineMode,
         String enginePreset,
         Integer engineElo,
+        Long engineTimeBudgetMs,
         Color playerColor,
         UUID engineExecutionId
 ) {
@@ -30,6 +31,6 @@ public record GameStateDto(
                         GameEndReason endReason, List<MoveDto> moves, EvaluationDto evaluation,
                         EngineMoveResponseDto analysis, Instant createdAt, Instant lastMoveAt) {
         this(gameId, fen, sideToMove, result, endReason, moves, evaluation, analysis,
-                createdAt, lastMoveAt, null, null, null, null, null, null, null, null);
+                createdAt, lastMoveAt, null, null, null, null, null, null, null, null, null);
     }
 }

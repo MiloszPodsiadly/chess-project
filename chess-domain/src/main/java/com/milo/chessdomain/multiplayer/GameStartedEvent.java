@@ -16,5 +16,6 @@ public record GameStartedEvent(
         long blackTimeLeftMs,
         Instant lastMoveAt,
         String reconnectToken,
-        String roomCode
+        String roomCode,
+        Long version
 ) {}

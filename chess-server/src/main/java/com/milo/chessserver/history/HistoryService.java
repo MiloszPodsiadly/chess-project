@@ -68,7 +68,7 @@ public class HistoryService {
             return "ENGINE";
         }
         UserEntity opponent = opponentFor(game, user);
-        return opponent != null ? opponent.getUsername() : "ENGINE";
+        return opponent != null ? opponent.getDisplayName() : "ENGINE";
     }
 
     private boolean opponentIsEngine(GameEntity game, UserEntity user) {

@@ -13,5 +13,7 @@ public record GameEndedEvent(
         String fen,
         Color sideToMove,
         long whiteTimeLeftMs,
-        long blackTimeLeftMs
+        long blackTimeLeftMs,
+        Long version,
+        java.util.List<com.milo.chessdomain.game.MoveDto> moves
 ) {}

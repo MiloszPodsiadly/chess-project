@@ -1,5 +1,16 @@
 export type Color = 'WHITE' | 'BLACK';
 
+export type MultiplayerConnectionState =
+  | 'DISCONNECTED'
+  | 'CONNECTING'
+  | 'AUTHENTICATING'
+  | 'READY'
+  | 'RECONNECTING'
+  | 'RECOVERING_GAME'
+  | 'ERROR';
+
+export type MatchmakingQueueState = 'IDLE' | 'QUEUED';
+
 export type TimeControlType = 'UNTIMED' | 'BULLET' | 'BLITZ' | 'RAPID' | 'CLASSICAL';
 
 export interface EvaluationDto {
@@ -39,6 +50,7 @@ export interface GameStateSyncDto {
   sideToMove: Color;
   yourColor?: Color | null;
   roomCode?: string | null;
+  timeControlType?: TimeControlType | null;
   result: 'ONGOING' | 'WHITE_WIN' | 'BLACK_WIN' | 'DRAW';
   endReason:
     | 'NONE'
@@ -49,12 +61,14 @@ export interface GameStateSyncDto {
     | 'AGREED_DRAW'
     | 'THREEFOLD_REPETITION'
     | 'FIFTY_MOVE_RULE'
-    | 'INSUFFICIENT_MATERIAL';
+    | 'INSUFFICIENT_MATERIAL'
+    | 'DISCONNECT_TIMEOUT';
   moves: MoveDto[];
   whiteTimeLeftMs: number;
   blackTimeLeftMs: number;
   lastMoveAt?: string | null;
   analysis?: EngineMoveResponseDto | null;
+  version?: number | null;
 }
 
 export interface WsEvent<T = unknown> {
@@ -64,12 +78,15 @@ export interface WsEvent<T = unknown> {
 
 export interface HelloAck {
   username?: string | null;
+  reconnectToken?: string | null;
+  userId?: number | null;
 }
 
 export interface PublicRoomDto {
   roomCode: string;
   name?: string | null;
   hostUsername?: string | null;
+  hostUserId?: number | null;
   timeControlType: TimeControlType;
   createdAt: string;
   status: 'OPEN' | 'IN_GAME' | 'CLOSED';
@@ -91,7 +108,13 @@ export interface RoomMessageDto {
   createdAt: string;
 }
 
+export interface RoomHistoryDto {
+  roomCode: string;
+  messages: RoomMessageDto[];
+}
+
 export interface RoomParticipantDto {
+  userId: number;
   username?: string | null;
   role?: string | null;
   status?: string | null;
@@ -113,6 +136,7 @@ export interface GameStartedEvent {
   lastMoveAt?: string | null;
   reconnectToken: string;
   roomCode?: string | null;
+  version?: number | null;
 }
 
 export interface MoveAcceptedEvent {
@@ -124,6 +148,7 @@ export interface MoveAcceptedEvent {
   blackTimeLeftMs: number;
   lastMoveAt?: string | null;
   analysis?: EngineMoveResponseDto | null;
+  version?: number | null;
 }
 
 export interface MoveRejectedEvent {
@@ -133,6 +158,7 @@ export interface MoveRejectedEvent {
   sideToMove?: Color;
   whiteTimeLeftMs?: number;
   blackTimeLeftMs?: number;
+  version?: number | null;
 }
 
 export interface GameStateSyncEvent {
@@ -147,4 +173,6 @@ export interface GameEndedEvent {
   sideToMove?: Color;
   whiteTimeLeftMs?: number;
   blackTimeLeftMs?: number;
+  version?: number | null;
+  moves?: MoveDto[];
 }

@@ -6,5 +6,10 @@ import java.util.UUID;
 
 public record MakeMoveRequest(
         UUID gameId,
-        MoveDto move
-) {}
+        MoveDto move,
+        Long expectedVersion
+) {
+    public MakeMoveRequest(UUID gameId, MoveDto move) {
+        this(gameId, move, null);
+    }
+}
