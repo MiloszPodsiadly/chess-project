@@ -72,21 +72,25 @@ describe('ChessArenaAnimationComponent', () => {
 
   it('renders the lobby and updates to waiting and match-found states', () => {
     const component = fixture!.componentInstance;
-    const status = fixture!.nativeElement.querySelector('.arena-animation') as HTMLElement;
-    expect(status.classList.contains('state-lobby')).toBe(true);
+    const status = fixture!.nativeElement.querySelector('.arena-caption') as HTMLElement;
+    const scene = fixture!.nativeElement.querySelector('.arena-animation') as HTMLElement;
     expect(status.getAttribute('role')).toBe('status');
-    expect(status.getAttribute('aria-label')).toBe('Online chess lobby');
-    expect(status.querySelectorAll('.arena-square')).toHaveLength(64);
+    expect(status.textContent).toContain('Enter the arena');
+    expect(scene.querySelectorAll('.arena-square')).toHaveLength(64);
+    expect(scene.querySelectorAll('.piece-position')).toHaveLength(32);
+    expect(scene.querySelector('.arena-art')?.getAttribute('aria-hidden')).toBe('true');
+    expect(scene.querySelector('svg')?.getAttribute('focusable')).toBe('false');
 
     fixture!.componentRef.setInput('lang', 'en');
     fixture!.componentRef.setInput('state', 'WAITING_FOR_OPPONENT');
     fixture!.detectChanges();
-    expect(status.classList.contains('state-waiting')).toBe(true);
-    expect(status.getAttribute('aria-label')).toBe('Waiting for an opponent');
+    expect(scene.classList.contains('state-waiting')).toBe(true);
+    expect(status.textContent).toContain('Waiting for an opponent');
 
+    fixture!.componentRef.setInput('matchId', 'match-1');
     fixture!.componentRef.setInput('state', 'MATCH_FOUND');
     fixture!.detectChanges();
-    expect(status.classList.contains('state-match-found')).toBe(true);
+    expect(fixture!.nativeElement.classList.contains('is-match')).toBe(true);
     expect(status.getAttribute('aria-live')).toBe('polite');
     expect(component.statusLabel).toBe('Opponent found');
 
@@ -101,10 +105,8 @@ describe('ChessArenaAnimationComponent', () => {
     fixture!.detectChanges();
 
     expect(fixture!.nativeElement.classList.contains('is-paused')).toBe(true);
-    expect(fixture!.nativeElement.querySelector('.arena-animation')
-      .classList.contains('state-active')).toBe(true);
-    expect(fixture!.nativeElement.querySelector('.arena-animation').getAttribute('aria-label'))
-      .toBe('Game in progress');
+    expect(fixture!.nativeElement.querySelector('.arena-scene')).toBeNull();
+    expect(fixture!.nativeElement.querySelector('.arena-caption').textContent).toContain('Game in progress');
   });
 
   it('pauses when outside the viewport and resumes when visible again', () => {
@@ -116,6 +118,52 @@ describe('ChessArenaAnimationComponent', () => {
 
     observer.notify(true);
     expect(fixture!.nativeElement.classList.contains('is-paused')).toBe(false);
+  });
+
+  it('does not replay the intro or a celebrated match after route recreation', () => {
+    expect(fixture!.nativeElement.classList.contains('has-intro')).toBe(true);
+    fixture!.componentRef.setInput('matchId', 'unique-match');
+    fixture!.componentRef.setInput('state', 'MATCH_FOUND');
+    fixture!.detectChanges();
+    expect(fixture!.nativeElement.classList.contains('is-match')).toBe(true);
+    fixture!.destroy();
+
+    fixture = TestBed.createComponent(ChessArenaAnimationComponent);
+    fixture.componentRef.setInput('matchId', 'unique-match');
+    fixture.componentRef.setInput('state', 'MATCH_FOUND');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.classList.contains('has-intro')).toBe(false);
+    expect(fixture.nativeElement.classList.contains('is-match')).toBe(false);
+  });
+
+  it('cancels celebration for reconnect and rapid state changes without replaying a duplicate match', () => {
+    fixture!.componentRef.setInput('matchId', 'rapid-match');
+    fixture!.componentRef.setInput('state', 'MATCH_FOUND');
+    fixture!.detectChanges();
+    expect(fixture!.nativeElement.classList.contains('is-match')).toBe(true);
+    fixture!.componentRef.setInput('state', 'RECONNECTING');
+    fixture!.detectChanges();
+    expect(fixture!.nativeElement.classList.contains('is-match')).toBe(false);
+    fixture!.componentRef.setInput('state', 'MATCH_FOUND');
+    fixture!.detectChanges();
+    expect(fixture!.nativeElement.classList.contains('is-match')).toBe(false);
+    fixture!.componentRef.setInput('matchId', 'another-match');
+    fixture!.detectChanges();
+    expect(fixture!.nativeElement.classList.contains('is-match')).toBe(true);
+  });
+
+  it('frames the same scene for hero, lobby and compact variants with unique SVG references', () => {
+    const firstId = fixture!.componentInstance.sceneId;
+    fixture!.componentRef.setInput('variant', 'HERO');
+    fixture!.detectChanges();
+    expect(fixture!.nativeElement.querySelector('svg').getAttribute('viewBox')).toBe('0 0 1000 680');
+    fixture!.componentRef.setInput('variant', 'COMPACT');
+    fixture!.detectChanges();
+    expect(fixture!.nativeElement.querySelector('svg').getAttribute('viewBox')).toBe('80 170 840 450');
+    const other = TestBed.createComponent(ChessArenaAnimationComponent);
+    other.detectChanges();
+    expect(other.componentInstance.sceneId).not.toBe(firstId);
+    other.destroy();
   });
 
   it('pauses for a hidden document and resumes on visibility restoration', () => {
@@ -132,10 +180,12 @@ describe('ChessArenaAnimationComponent', () => {
     reducedMotion = true;
     motionChange?.({ matches: true } as MediaQueryListEvent);
     expect(fixture!.nativeElement.classList.contains('is-paused')).toBe(true);
+    expect(fixture!.nativeElement.classList.contains('has-intro')).toBe(false);
 
     reducedMotion = false;
     motionChange?.({ matches: false } as MediaQueryListEvent);
     expect(fixture!.nativeElement.classList.contains('is-paused')).toBe(false);
+    expect(fixture!.nativeElement.classList.contains('has-intro')).toBe(false);
   });
 
   it('starts paused when reduced motion is already enabled', async () => {

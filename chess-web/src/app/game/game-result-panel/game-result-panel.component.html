@@ -4,10 +4,10 @@
     <div><h2 [id]="headingId">{{ title }}</h2><p>{{ reason }}</p></div>
     <strong class="score">{{ notation }}</strong>
   </div>
-  <div class="result-meta" *ngIf="showMeta && !dismissed"><span>{{ opponent }}</span><span>{{ moveLabel }}: {{ outcome.moveCount }}</span></div>
+  <div class="result-meta" *ngIf="showMeta && !dismissed"><span *ngIf="mode === 'bot'">{{ opponent }}</span><span>{{ moveLabel }}: {{ outcome.moveCount }}</span></div>
   <div class="result-actions">
     <button type="button" class="primary arena-button arena-button--primary" (click)="playAgain.emit()">{{ playLabel }}</button>
-    <button type="button" class="secondary arena-button arena-button--secondary" *ngIf="mode === 'bot' && !dismissed" (click)="review.emit()">{{ reviewLabel }}</button>
+    <button type="button" class="secondary arena-button arena-button--secondary" *ngIf="!dismissed" (click)="review.emit()">{{ reviewLabel }}</button>
     <button type="button" class="secondary arena-button arena-button--secondary" *ngIf="mode === 'bot'" (click)="changeSetup.emit()">{{ changeLabel }}</button>
   </div>
 </section>
