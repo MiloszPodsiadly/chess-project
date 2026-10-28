@@ -47,8 +47,13 @@ export class GameStateService {
 
   loadExternalState(fen: string, moves: ExternalMove[], sideToMove: 'w' | 'b'): MoveView[] {
     const replay = new Chess();
+    let doublePawnPushTarget: string | null = null;
     for (const move of moves) {
       try {
+        const movingPiece = replay.get(move.from as Square);
+        const rankDistance = Number(move.to[1]) - Number(move.from[1]);
+        doublePawnPushTarget = movingPiece?.type === 'p' && Math.abs(rankDistance) === 2
+          ? `${move.from[0]}${(Number(move.from[1]) + Number(move.to[1])) / 2}` : null;
         replay.move({ from: move.from as Square, to: move.to as Square,
           promotion: move.promotion as 'q' | 'r' | 'b' | 'n' | undefined });
       } catch {
@@ -57,10 +62,10 @@ export class GameStateService {
     }
     const expected = fen.split(' ');
     const actual = replay.fen().split(' ');
-    if (actual.length !== 6 || expected.length !== 6 || sideToMove !== replay.turn()
+    const forcedEnPassant = replay.fen({ forceEnpassantSquare: true }).split(' ');
+    if (actual.length !== 6 || forcedEnPassant.length !== 6 || expected.length !== 6 || sideToMove !== replay.turn()
         || [0, 1, 2, 4, 5].some(index => actual[index] !== expected[index])
-        || (actual[3] !== expected[3]
-          && replay.moves({ verbose: true }).some(move => move.flags.includes('e')))) {
+        || ![actual[3], forcedEnPassant[3], doublePawnPushTarget].includes(expected[3])) {
       throw new Error('Game history does not match the server position');
     }
     this.chess = replay;

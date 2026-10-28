@@ -329,6 +329,7 @@ describe('multiplayer event reconciliation', () => {
     window.sessionStorage.removeItem('roomReconnectToken');
     window.sessionStorage.removeItem('roomRecoveryRoomCode');
     const service = new MultiplayerService();
+    service.joinRoom('PRIV01');
     (service as any).handleMessage({ body: JSON.stringify({ type: 'roomRecovery', payload: {
       roomCode: 'PRIV01', reconnectToken: 'room-token-1'
     } }) });
@@ -349,6 +350,24 @@ describe('multiplayer event reconciliation', () => {
     });
     expect((service as any).currentRoomReconnectToken).toBeNull();
     expect(window.sessionStorage.getItem('roomReconnectToken')).toBeNull();
+    expect(window.sessionStorage.getItem('roomRecoveryRoomCode')).toBeNull();
+  });
+
+  it('ignores a delayed room recovery after the pending room was left', () => {
+    window.sessionStorage.removeItem('roomRecoveryRoomCode');
+    window.sessionStorage.removeItem('roomReconnectToken');
+    const service = new MultiplayerService();
+    vi.spyOn(service as any, 'send').mockImplementation(() => undefined);
+    service.joinRoom('ROOM1');
+
+    service.leaveRoom();
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'roomRecovery', payload: {
+      roomCode: 'ROOM1', reconnectToken: 'stale-room-token'
+    } }) });
+
+    expect(service.activeRoomCode$.value).toBeNull();
+    expect((service as any).pendingRoomJoinCode).toBeNull();
+    expect((service as any).currentRoomReconnectToken).toBeNull();
     expect(window.sessionStorage.getItem('roomRecoveryRoomCode')).toBeNull();
   });
 

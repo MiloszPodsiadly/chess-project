@@ -296,6 +296,9 @@ export class MultiplayerService {
     this.drawOffer$.next(false);
     this.activeRoomCode$.next(null);
     this.roomMessages$.next([]);
+    this.pendingRoomJoinCode = null;
+    this.pendingRoomSpectateCode = null;
+    this.roomParticipants$.next([]);
     this.roomInvite$.next(null);
     this.opponentDisconnected$.next(false);
     this.queueState$.next('IDLE');
@@ -367,6 +370,7 @@ export class MultiplayerService {
           const normalized = credential.roomCode.trim().toUpperCase();
           const pendingRoom = this.pendingRoomJoinCode ?? this.pendingRoomSpectateCode;
           if (pendingRoom && pendingRoom !== normalized) break;
+          if (!pendingRoom && this.activeRoomCode$.value !== normalized) break;
           this.pendingRoomJoinCode = null;
           this.pendingRoomSpectateCode = null;
           if (this.activeRoomCode$.value === normalized) {
