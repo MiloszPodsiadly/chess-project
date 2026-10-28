@@ -38,6 +38,9 @@ const ONLINE_ERROR_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   invalid_game_snapshot: 'invalidGameSnapshot',
   state_conflict: 'stateConflict',
   snapshot_recovery_failed: 'snapshotRecoveryFailed',
+  room_operation_pending: 'roomOperationPendingError',
+  room_operation_timeout: 'roomOperationTimeoutError',
+  connection_not_ready: 'roomOperationConnectionError',
   room_invite_failed: 'roomInviteFailedError',
   roomInviteFailed: 'roomInviteFailedError',
   room_kick_failed: 'roomKickFailedError',
@@ -171,11 +174,15 @@ export class MultiplayerLobbyComponent {
   }
 
   joinOnlineRoom() {
-    if (!this.onlineRoomCode.trim()) return;
+    if (!this.onlineRoomCode.trim() || this.isRoomOperationPending()) return;
     this.joinRequested.emit({
       roomCode: this.onlineRoomCode.trim(),
       password: this.onlineJoinPassword.trim() || null
     });
+  }
+
+  isRoomOperationPending(): boolean {
+    return this.multiplayer.hasPendingRoomOperation();
   }
 
   startRoomGame(roomCode: string) {

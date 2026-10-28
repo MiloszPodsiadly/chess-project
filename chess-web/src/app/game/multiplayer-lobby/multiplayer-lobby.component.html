@@ -47,6 +47,10 @@
     <span>{{ t('matchmakingQueued') }}</span>
     <button type="button" class="ghost arena-button arena-button--secondary" (click)="multiplayer.cancelMatchmaking()">{{ t('cancelQueue') }}</button>
   </div>
+  <div class="connection-banner matchmaking-banner" role="status" aria-live="polite"
+    *ngIf="multiplayer.pendingRoomOperation$ | async as pendingOperation">
+    {{ t(pendingOperation.kind === 'join' ? 'joiningRoom' : 'joiningRoomAsSpectator') }}
+  </div>
   <div class="room-list" *ngIf="onlineView === 'public'" role="tabpanel" id="online-panel-public" aria-labelledby="online-tab-public" tabindex="0">
     <div class="room-list-header">
       <span>{{ t('publicRooms') }}</span>
@@ -64,7 +68,7 @@
           <button
             type="button"
             class="ghost arena-button arena-button--secondary"
-            [disabled]="room.status !== 'OPEN' || isOwnRoom(room) || hasActiveRoom()"
+            [disabled]="room.status !== 'OPEN' || isOwnRoom(room) || hasActiveRoom() || isRoomOperationPending()"
             (click)="onlineRoomCode = room.roomCode; joinOnlineRoom()"
           >
             {{ t('joinRoom') }}
@@ -81,6 +85,7 @@
             type="button"
             class="ghost arena-button arena-button--secondary"
             *ngIf="room.status === 'IN_GAME'"
+            [disabled]="hasActiveRoom() || isRoomOperationPending()"
             (click)="multiplayer.spectateRoom(room.roomCode)"
           >
             {{ t('spectate') }}
@@ -129,7 +134,8 @@
       <input type="password" autocomplete="current-password" [(ngModel)]="onlineJoinPassword" [placeholder]="t('joinPasswordPlaceholder')" />
     </label>
     <div class="lobby-actions">
-      <button type="button" class="primary arena-button arena-button--primary" (click)="joinOnlineRoom()">{{ t('joinRoom') }}</button>
+      <button type="button" class="primary arena-button arena-button--primary" (click)="joinOnlineRoom()"
+        [disabled]="isRoomOperationPending()">{{ t('joinRoom') }}</button>
     </div>
   </div>
   <div class="invite-box" *ngIf="onlineView === 'manage' && (multiplayer.roomCode$ | async) as createdCode" role="tabpanel" id="online-panel-manage" aria-labelledby="online-tab-manage" tabindex="0">

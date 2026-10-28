@@ -38,7 +38,8 @@ function page() {
     gameState$: { value: null }, yourColor$: { value: 'WHITE' },
     queueState$: { value: 'IDLE' }, matchFound$: { value: false },
     activeRoomCode$: { value: null },
-    opponentDisconnected$: { value: false }, makeMove: vi.fn()
+    opponentDisconnected$: { value: false }, makeMove: vi.fn(),
+    leaveGame: vi.fn(), leaveRoom: vi.fn(), disconnect: vi.fn(), clearLastError: vi.fn()
   };
   (component as any).engineApi = { authenticated: false };
   vi.spyOn(component, 'maybeBotMove').mockResolvedValue(undefined);
@@ -47,6 +48,34 @@ function page() {
 }
 
 describe('bot board and color regression', () => {
+  it('disconnects from an active online game without abandoning recoverable state', () => {
+    const component = page();
+    const game = { gameId: 'recoverable', result: 'ONGOING' };
+    const multiplayer = (component as any).multiplayer;
+    multiplayer.connected$.value = true;
+    multiplayer.gameState$.value = game;
+
+    (component as any).disconnectOnlineSession();
+
+    expect(multiplayer.disconnect).toHaveBeenCalledOnce();
+    expect(multiplayer.leaveGame).not.toHaveBeenCalled();
+    expect(multiplayer.leaveRoom).not.toHaveBeenCalled();
+    expect(multiplayer.gameState$.value).toBe(game);
+  });
+
+  it('leaves a lobby room when exiting without an ongoing game', () => {
+    const component = page();
+    const multiplayer = (component as any).multiplayer;
+    multiplayer.connected$.value = true;
+    multiplayer.activeRoomCode$.value = 'ROOM1';
+
+    (component as any).disconnectOnlineSession();
+
+    expect(multiplayer.leaveRoom).toHaveBeenCalledOnce();
+    expect(multiplayer.disconnect).toHaveBeenCalledOnce();
+    expect(multiplayer.leaveGame).not.toHaveBeenCalled();
+  });
+
   it('hides the duplicate idle Connected row but keeps actionable multiplayer status', () => {
     const component = page();
     component.onlineMode = true;

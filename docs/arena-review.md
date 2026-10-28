@@ -59,7 +59,7 @@ The current production build has an initial bundle of 297.63 kB raw / 82.43 kB e
 
 ## Validation
 
-- Frontend unit suite: 19 files, 110 tests passed.
+- Frontend unit suite: 19 files, 125 tests passed.
 - Stockfish.js 19 asset and UCI search check: passed.
 - Production Angular build: completed with no component stylesheet budget warning; the remaining `sockjs-client` CommonJS warning is documented above.
 - Arena browser assertions: centered hero copy and action labels, language, navigation, all eight landing, lobby, and active-game viewports; simulated 200% zoom with Polish copy; animation states; reduced motion; and repeated route transitions passed.

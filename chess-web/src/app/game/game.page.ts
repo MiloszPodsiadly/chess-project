@@ -199,6 +199,11 @@ export class GamePageComponent {
       roomInGameError: 'A game is already in progress in this room.',
       drawOfferLimitError: 'The draw offer limit has been reached.',
       roomSpectateFailedError: 'Unable to spectate this room.',
+      roomOperationPendingError: 'Another room request is still in progress.',
+      roomOperationTimeoutError: 'The room request timed out. You can try again.',
+      roomOperationConnectionError: 'Reconnect before requesting a room.',
+      joiningRoom: 'Joining room...',
+      joiningRoomAsSpectator: 'Joining as a spectator...',
       reconnectAckTimeout: 'The server did not confirm the reconnect. Retrying stopped; reconnect to restore the game.',
       invalidGameSnapshot: 'The recovered board could not be verified. Keeping the current board while requesting a fresh snapshot.',
       stateConflict: 'Game updates did not match. Checking the state with the server.',
@@ -339,6 +344,11 @@ export class GamePageComponent {
       roomInGameError: 'W tym pokoju trwa już partia.',
       drawOfferLimitError: 'Osiągnięto limit propozycji remisu.',
       roomSpectateFailedError: 'Nie udało się dołączyć do pokoju jako widz.',
+      roomOperationPendingError: 'Trwa już inne żądanie pokoju.',
+      roomOperationTimeoutError: 'Żądanie pokoju przekroczyło limit czasu. Możesz spróbować ponownie.',
+      roomOperationConnectionError: 'Połącz się ponownie przed wysłaniem żądania do pokoju.',
+      joiningRoom: 'Dołączanie do pokoju...',
+      joiningRoomAsSpectator: 'Dołączanie do pokoju jako widz...',
       reconnectAckTimeout: 'Serwer nie potwierdzil ponownego polaczenia. Ponawianie zatrzymano; polacz sie ponownie, aby przywrocic partie.',
       invalidGameSnapshot: 'Nie mozna zweryfikowac odzyskanej planszy. Zachowano obecna plansze i poproszono o nowy stan.',
       stateConflict: 'Aktualizacje partii sa niespojne. Sprawdzam stan na serwerze.',
@@ -553,21 +563,11 @@ export class GamePageComponent {
       .subscribe((params) => {
         const mode = params.get('mode');
         if (this.botMode && mode !== 'bot') this.invalidateBotSession();
-        if (mode === 'bot') {
-          if (this.multiplayer.connected$.value || this.multiplayer.gameState$.value?.gameId) {
-            this.disconnectOnlineSession();
-          }
-        }
-        if (this.onlineMode && mode !== 'online') {
-          const activeGame = this.multiplayer.gameState$.value?.result === 'ONGOING';
-          if (activeGame) {
-            this.multiplayer.leaveGame();
-            this.multiplayer.disconnect();
-          } else {
-            this.multiplayer.leaveRoom();
-            this.multiplayer.disconnect();
-          }
-          this.multiplayer.clearLastError();
+        const leavingOnlineMode = this.onlineMode && mode !== 'online';
+        const enteringBotWithMultiplayerSession = mode === 'bot'
+          && (this.multiplayer.connected$.value || this.multiplayer.gameState$.value?.gameId);
+        if (leavingOnlineMode || enteringBotWithMultiplayerSession) {
+          this.disconnectOnlineSession();
         }
         this.showBotSetup = mode === 'bot';
         this.botMode = mode === 'bot';
@@ -881,7 +881,7 @@ export class GamePageComponent {
   private disconnectOnlineSession() {
     const activeGame = this.multiplayer.gameState$.value?.result === 'ONGOING';
     if (activeGame) {
-      this.multiplayer.leaveGame();
+      // A mode switch disconnects temporarily; keep the recovery token and game ID for re-entry.
       this.multiplayer.disconnect();
     } else {
       this.multiplayer.leaveRoom();

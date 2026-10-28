@@ -9,12 +9,14 @@ const summarizeStompFrame = (payload) => {
   const frame = Array.isArray(messages) ? messages.find((message) => typeof message === 'string') : null;
   if (!frame) return {};
   const command = frame.split('\n', 1)[0];
-  if (command !== 'MESSAGE') return { command };
   const separator = frame.indexOf('\n\n');
+  const headers = separator < 0 ? [] : frame.slice(0, separator).split('\n');
+  const destination = headers.find(header => header.startsWith('destination:'))?.slice('destination:'.length);
+  if (command !== 'MESSAGE') return { command, destination };
   if (separator < 0) return { command };
   try {
     const body = JSON.parse(frame.slice(separator + 2).replace(/\0+$/, ''));
-    return { command, eventType: typeof body.type === 'string' ? body.type : 'unknown' };
+    return { command, destination, eventType: typeof body.type === 'string' ? body.type : 'unknown' };
   } catch {
     return { command, eventType: 'unparseable' };
   }
@@ -23,13 +25,16 @@ const summarizeStompFrame = (payload) => {
 test('two players and a spectator complete a real multiplayer game', async ({ browser }, testInfo) => {
   const runId = randomUUID().replaceAll('-', '').slice(0, 8).toUpperCase();
   const hostName = `Host${runId}`;
+  const secondHostName = `Other${runId}`;
   const guestName = `Guest${runId}`;
   const spectatorName = `Spec${runId}`;
   const roomName = `E2E ${runId}`;
+  const secondRoomName = `E2E Other ${runId}`;
   const contexts = [];
   const clients = [];
   const pageErrors = [];
   let roomCreated = false;
+  let secondRoomCreated = false;
   let gameStarted = false;
 
   const openOnline = async (name) => {
@@ -75,6 +80,7 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
 
   try {
     const host = await openOnline(hostName);
+    const secondHost = await openOnline(secondHostName);
     const guest = await openOnline(guestName);
 
     await expect(roomChat(host)).toHaveCount(0);
@@ -96,17 +102,41 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     expect(roomCode).toMatch(/^[A-Z0-9]{6}$/);
     await expect(roomChat(host)).toBeVisible();
 
+    await secondHost.getByRole('tab', { name: 'Create', exact: true }).click();
+    await secondHost.getByLabel('Room name').fill(secondRoomName);
+    await secondHost.getByRole('tabpanel', { name: 'Create' }).getByRole('button', {
+      name: 'Create room', exact: true
+    }).click();
+    await secondHost.getByRole('tab', { name: 'Manage', exact: true }).click();
+    await expect(secondHost.locator('#online-panel-manage')).toContainText('Room created');
+    secondRoomCreated = true;
+
     await guest.getByRole('tab', { name: 'Join', exact: true }).click();
     await expect(guest.getByLabel('Join password')).toHaveAttribute('type', 'password');
-    await guest.getByLabel('Room code').fill(roomCode);
-    await guest.getByRole('tabpanel', { name: 'Join' }).getByRole('button', {
-      name: 'Join room', exact: true
-    }).click();
+    await guest.getByRole('tab', { name: 'Public rooms', exact: true }).click();
+    const primaryRoomRow = guest.locator('.room-row').filter({ hasText: roomName });
+    const competingRoomRow = guest.locator('.room-row').filter({ hasText: secondRoomName });
+    await expect(primaryRoomRow).toBeVisible({ timeout: 20_000 });
+    await expect(competingRoomRow).toBeVisible({ timeout: 20_000 });
+    await guest.evaluate(([firstName, secondName]) => {
+      const rowFor = (name) => [...document.querySelectorAll('.room-row')]
+        .find(row => row.querySelector('.room-name')?.textContent.trim() === name);
+      const firstJoin = rowFor(firstName)?.querySelector('.room-actions button');
+      const secondJoin = rowFor(secondName)?.querySelector('.room-actions button');
+      if (!firstJoin || !secondJoin) throw new Error('Both public room join actions must exist');
+      firstJoin.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      secondJoin.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }, [roomName, secondRoomName]);
     await expect(roomChat(guest)).toBeVisible({ timeout: 20_000 });
+    const guestNetworkEvents = clients.find(client => client.name === guestName).networkEvents;
+    await expect.poll(() => guestNetworkEvents.filter(event =>
+      event.direction === 'sent' && event.command === 'SEND' && event.destination === '/app/joinRoom').length
+    ).toBe(1);
 
     await expect(hostManagement).toContainText(guestName, { timeout: 20_000 });
     await guest.getByRole('tab', { name: 'Manage', exact: true }).click();
     await expect(guest.locator('#online-panel-manage')).toContainText(hostName);
+    await expect(guest.locator('#online-panel-manage')).not.toContainText(secondHostName);
     await expect(guest.locator('#online-panel-manage')).toContainText(guestName);
 
     const hostMessage = `hello-${runId}`;
@@ -155,6 +185,21 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
       await expect(page.getByRole('button', { name: 'e7', exact: true }).locator('img')).toHaveCount(0);
     }
 
+    await host.goBack();
+    await expect(host.locator('.hero-actions')).toBeVisible();
+    await host.locator('.hero-actions').getByRole('link', { name: 'Play vs Bot', exact: true }).click();
+    await expect(host).toHaveURL(/mode=bot/);
+    await host.locator('.play-mode-switcher').getByRole('link', { name: 'Multiplayer', exact: true }).click();
+    await expect(host).toHaveURL(/mode=online/);
+    await expect(host.locator('.online-actions-card')).toBeVisible({ timeout: 45_000 });
+    await expect(host.locator('.multiplayer-turn-status')).toContainText('Game in progress', { timeout: 45_000 });
+    await expect(host.locator('app-board button.square.last-move[aria-label="e5"]')).toBeVisible();
+
+    await guest.reload();
+    await expect(guest.locator('.online-actions-card')).toBeVisible({ timeout: 45_000 });
+    await expect(guest.locator('.multiplayer-turn-status')).toContainText('Game in progress', { timeout: 45_000 });
+    await expect(guest.locator('app-board button.square.last-move[aria-label="e5"]')).toBeVisible();
+
     const spectator = await openOnline(spectatorName);
     await spectator.getByRole('tab', { name: 'Public rooms', exact: true }).click();
     const roomRow = spectator.locator('.room-row').filter({ hasText: roomName });
@@ -201,7 +246,9 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
         roomName,
         checks: [
           'chat absent before membership', 'host create and manage room', 'guest join and participant sync',
+          'overlapping public-room join attempts publish one request and preserve authoritative membership',
           'bidirectional room chat', 'opposite player colors', 'e2-e4 and e7-e5 synchronized on both clients',
+          'Online to Bot to Online restores the active game; browser refresh restores the same game position',
           'wrong-turn move rejected', 'spectator remains read-only', 'resignation reaches both clients',
           'finished game review replays board positions with navigation for a player and spectator'
         ],
@@ -226,7 +273,10 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     });
     throw error;
   } finally {
-    const [host, guest, spectator] = clients.map((client) => client.page);
+    const host = clients.find(client => client.name === hostName)?.page;
+    const secondHost = clients.find(client => client.name === secondHostName)?.page;
+    const guest = clients.find(client => client.name === guestName)?.page;
+    const spectator = clients.find(client => client.name === spectatorName)?.page;
     if (host && !host.isClosed()) {
       if (gameStarted) {
         await host.locator('.online-actions-card').getByRole('button', { name: 'Resign', exact: true })
@@ -248,6 +298,11 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     }
     if (gameStarted && host && !host.isClosed()) {
       await host.getByRole('button', { name: 'Back to lobby', exact: true }).click({ timeout: 2_000 }).catch(() => {});
+    }
+    if (secondRoomCreated && secondHost && !secondHost.isClosed()) {
+      await secondHost.getByRole('tab', { name: 'Manage', exact: true }).click({ timeout: 2_000 }).catch(() => {});
+      await secondHost.getByRole('button', { name: 'Delete room', exact: true })
+        .click({ timeout: 2_000 }).catch(() => {});
     }
 
     for (let index = 0; index < contexts.length; index += 1) {

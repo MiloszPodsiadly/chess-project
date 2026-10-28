@@ -3,6 +3,9 @@ import { Chess } from 'chess.js';
 import { MultiplayerService } from './multiplayer.service';
 import { multiplayerOutcome } from '../game/game-outcome';
 
+const pendingRoomOperation = (service: MultiplayerService) =>
+  (service as any).pendingRoomOperationState.value;
+
 describe('multiplayer event reconciliation', () => {
   it('ignores stale moves and requests a snapshot when an event version is skipped', () => {
     const service = new MultiplayerService();
@@ -223,7 +226,7 @@ describe('multiplayer event reconciliation', () => {
 
     expect(order).toEqual(['joinRoom']);
     expect(service.activeRoomCode$.value).toBeNull();
-    expect((service as any).pendingRoomJoinCode).toBe('AB12CD');
+    expect(pendingRoomOperation(service)).toEqual({ kind: 'join', roomCode: 'AB12CD' });
 
     (service as any).handleMessage({ body: JSON.stringify({ type: 'roomRecovery', payload: {
       roomCode: 'AB12CD', reconnectToken: 'approved-token'
@@ -231,7 +234,7 @@ describe('multiplayer event reconciliation', () => {
 
     expect(order).toEqual(['joinRoom', 'subscribe', 'history', 'participants']);
     expect(service.activeRoomCode$.value).toBe('AB12CD');
-    expect((service as any).pendingRoomJoinCode).toBeNull();
+    expect(pendingRoomOperation(service)).toBeNull();
   });
 
   it('does not mark a spectator room active until the server confirms access', () => {
@@ -248,7 +251,7 @@ describe('multiplayer event reconciliation', () => {
 
     expect(order).toEqual(['spectateRoom']);
     expect(service.activeRoomCode$.value).toBeNull();
-    expect((service as any).pendingRoomSpectateCode).toBe('AB12CD');
+    expect(pendingRoomOperation(service)).toEqual({ kind: 'spectate', roomCode: 'AB12CD' });
 
     (service as any).handleMessage({ body: JSON.stringify({ type: 'roomRecovery', payload: {
       roomCode: 'AB12CD', reconnectToken: 'spectator-token'
@@ -256,7 +259,7 @@ describe('multiplayer event reconciliation', () => {
 
     expect(order).toEqual(['spectateRoom', 'subscribe', 'history', 'participants']);
     expect(service.activeRoomCode$.value).toBe('AB12CD');
-    expect((service as any).pendingRoomSpectateCode).toBeNull();
+    expect(pendingRoomOperation(service)).toBeNull();
   });
 
   it('keeps a rejected spectator request out of active room state', () => {
@@ -270,7 +273,7 @@ describe('multiplayer event reconciliation', () => {
 
     expect(service.activeRoomCode$.value).toBeNull();
     expect(service.lastError$.value).toBe('room_closed');
-    expect((service as any).pendingRoomSpectateCode).toBeNull();
+    expect(pendingRoomOperation(service)).toBeNull();
   });
 
   it('clears pending join state when the server rejects a join', () => {
@@ -285,7 +288,160 @@ describe('multiplayer event reconciliation', () => {
     expect(service.activeRoomCode$.value).toBeNull();
     expect(service.roomCode$.value).toBeNull();
     expect(service.lastError$.value).toBe('room_full');
-    expect((service as any).pendingRoomJoinCode).toBeNull();
+    expect(pendingRoomOperation(service)).toBeNull();
+  });
+
+  it.each([
+    ['joinRoom', 'joinRoom', 'joinRoom'],
+    ['joinRoom', 'spectateRoom', 'joinRoom'],
+    ['spectateRoom', 'joinRoom', 'spectateRoom'],
+    ['spectateRoom', 'spectateRoom', 'spectateRoom']
+  ] as const)('%s blocks overlapping %s requests before sending a second command',
+    (firstMethod, secondMethod, expectedDestination) => {
+      const service = new MultiplayerService();
+      const send = vi.spyOn(service as any, 'send').mockReturnValue(true);
+
+      expect((service as any)[firstMethod]('ROOM1')).toBe(true);
+      expect((service as any)[secondMethod]('ROOM2')).toBe(false);
+
+      expect(send.mock.calls.map(([destination]) => destination)).toEqual([expectedDestination]);
+      expect(pendingRoomOperation(service)).toMatchObject({
+        kind: firstMethod === 'joinRoom' ? 'join' : 'spectate', roomCode: 'ROOM1'
+      });
+      service.disconnect();
+    });
+
+  it('allows a different join after the pending join is rejected', () => {
+    const service = new MultiplayerService();
+    const send = vi.spyOn(service as any, 'send').mockReturnValue(true);
+
+    expect(service.joinRoom('ROOM1')).toBe(true);
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'roomJoinFailed', payload: 'room_not_found' }) });
+    expect(pendingRoomOperation(service)).toBeNull();
+    expect(service.joinRoom('ROOM2')).toBe(true);
+
+    expect(send.mock.calls.map(([destination]) => destination)).toEqual(['joinRoom', 'joinRoom']);
+    expect(pendingRoomOperation(service)).toEqual({ kind: 'join', roomCode: 'ROOM2' });
+    service.disconnect();
+  });
+
+  it('allows a different spectate request after the pending room closes', () => {
+    const service = new MultiplayerService();
+    const send = vi.spyOn(service as any, 'send').mockReturnValue(true);
+
+    expect(service.spectateRoom('ROOM1')).toBe(true);
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'roomClosed', payload: {
+      roomCode: 'ROOM1', closeReason: 'HOST_DELETED'
+    } }) });
+    expect(pendingRoomOperation(service)).toBeNull();
+    expect(service.lastError$.value).toBe('room_closed_host_deleted');
+    expect(service.spectateRoom('ROOM2')).toBe(true);
+
+    expect(send.mock.calls.map(([destination]) => destination)).toEqual(['spectateRoom', 'spectateRoom']);
+    expect(pendingRoomOperation(service)).toEqual({ kind: 'spectate', roomCode: 'ROOM2' });
+    service.disconnect();
+  });
+
+  it('does not leave a request pending when the STOMP connection is unavailable', () => {
+    const service = new MultiplayerService();
+
+    expect(service.joinRoom('ROOM1')).toBe(false);
+    expect(pendingRoomOperation(service)).toBeNull();
+    expect(service.lastError$.value).toBe('connection_not_ready');
+  });
+
+  it('clears a room request after a bounded timeout and asks the server to release membership', () => {
+    vi.useFakeTimers();
+    try {
+      const service = new MultiplayerService();
+      const send = vi.spyOn(service as any, 'send').mockReturnValue(true);
+      service.joinRoom('ROOM1');
+
+      vi.advanceTimersByTime(15_000);
+
+      expect(pendingRoomOperation(service)).toBeNull();
+      expect(service.lastError$.value).toBe('room_operation_timeout');
+      expect(send.mock.calls.map(([destination]) => destination)).toEqual(['joinRoom', 'leaveRoom']);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears a pending room request on deliberate disconnect and ignores its late ACK', () => {
+    window.sessionStorage.removeItem('roomRecoveryRoomCode');
+    window.sessionStorage.removeItem('roomReconnectToken');
+    const service = new MultiplayerService();
+    const send = vi.spyOn(service as any, 'send').mockReturnValue(true);
+    service.joinRoom('ROOM1');
+
+    service.disconnect();
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'roomRecovery', payload: {
+      roomCode: 'ROOM1', reconnectToken: 'stale-token'
+    } }) });
+
+    expect(send.mock.calls.map(([destination]) => destination)).toEqual(['joinRoom', 'leaveRoom']);
+    expect(pendingRoomOperation(service)).toBeNull();
+    expect(service.activeRoomCode$.value).toBeNull();
+    expect((service as any).currentRoomReconnectToken).toBeNull();
+  });
+
+  it('clears a pending room request after authentication failure', () => {
+    const service = new MultiplayerService();
+    vi.spyOn(service as any, 'send').mockReturnValue(true);
+    service.joinRoom('ROOM1');
+
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'helloFailed', payload: 'not_authenticated' }) });
+
+    expect(pendingRoomOperation(service)).toBeNull();
+    expect(service.lastError$.value).toBe('not_authenticated');
+  });
+
+  it('handles duplicate room recovery idempotently without repeating room fetches', () => {
+    window.sessionStorage.removeItem('roomRecoveryRoomCode');
+    window.sessionStorage.removeItem('roomReconnectToken');
+    const service = new MultiplayerService();
+    const order: string[] = [];
+    vi.spyOn(service as any, 'subscribeRoomTopic').mockImplementation(() => {
+      order.push('subscribe');
+      (service as any).roomSubscription = { unsubscribe: vi.fn() };
+      (service as any).roomSubscriptionCode = 'ROOM1';
+    });
+    vi.spyOn(service as any, 'roomHistory').mockImplementation(() => order.push('history'));
+    vi.spyOn(service as any, 'roomParticipants').mockImplementation(() => order.push('participants'));
+    vi.spyOn(service as any, 'send').mockReturnValue(true);
+    service.joinRoom('ROOM1');
+    const ack = { body: JSON.stringify({ type: 'roomRecovery', payload: {
+      roomCode: 'ROOM1', reconnectToken: 'room-token'
+    } }) };
+
+    (service as any).handleMessage(ack);
+    (service as any).handleMessage(ack);
+
+    expect(order).toEqual(['subscribe', 'history', 'participants']);
+    expect(pendingRoomOperation(service)).toBeNull();
+    service.disconnect();
+  });
+
+  it('preserves an active game and reconnect credential on temporary disconnect', () => {
+    const fixture = foolsMateFixture();
+    const service = serviceWithState(fixture.initial);
+    (service as any).currentGameId = fixture.initial.gameId;
+    (service as any).setReconnectToken('online-token');
+
+    service.disconnect();
+
+    expect(service.gameState$.value).toBe(fixture.initial);
+    expect((service as any).currentGameId).toBe(fixture.initial.gameId);
+    expect(window.sessionStorage.getItem('onlineReconnect')).toBe('online-token');
+    expect((service as any).ignoredGameIds.has(fixture.initial.gameId)).toBe(false);
+
+    (service as any).awaitingRecoverySnapshot = true;
+    service.connectionState$.next('RECOVERING_GAME');
+    (service as any).handleGameStateSync({ state: fixture.initial });
+    expect(service.connectionState$.value).toBe('READY');
+    expect(service.ready$.value).toBe(true);
+    expect(service.gameState$.value?.gameId).toBe(fixture.initial.gameId);
   });
 
   it('cleans up a closed room once and keeps the reason for the user', () => {
@@ -329,6 +485,7 @@ describe('multiplayer event reconciliation', () => {
     window.sessionStorage.removeItem('roomReconnectToken');
     window.sessionStorage.removeItem('roomRecoveryRoomCode');
     const service = new MultiplayerService();
+    vi.spyOn(service as any, 'send').mockReturnValue(true);
     service.joinRoom('PRIV01');
     (service as any).handleMessage({ body: JSON.stringify({ type: 'roomRecovery', payload: {
       roomCode: 'PRIV01', reconnectToken: 'room-token-1'
@@ -366,7 +523,7 @@ describe('multiplayer event reconciliation', () => {
     } }) });
 
     expect(service.activeRoomCode$.value).toBeNull();
-    expect((service as any).pendingRoomJoinCode).toBeNull();
+    expect(pendingRoomOperation(service)).toBeNull();
     expect((service as any).currentRoomReconnectToken).toBeNull();
     expect(window.sessionStorage.getItem('roomRecoveryRoomCode')).toBeNull();
   });

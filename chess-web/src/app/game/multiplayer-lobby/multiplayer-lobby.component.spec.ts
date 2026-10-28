@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MultiplayerLobbyComponent } from './multiplayer-lobby.component';
 
 function lobby(translations: Readonly<Record<string, string>>) {
@@ -38,5 +38,21 @@ describe('MultiplayerLobbyComponent', () => {
     expect(component.onlineErrorMessage('roomSpectateFailed'))
       .toBe('Nie udało się dołączyć jako widz.');
     expect(component.onlineErrorMessage('malformed_request')).toBe('Nie udało się wykonać akcji.');
+  });
+
+  it('blocks duplicate join form submissions while a room operation is pending', () => {
+    const component = lobby({});
+    const emit = vi.fn();
+    (component as any).multiplayer = {
+      hasPendingRoomOperation: () => true,
+      pendingRoomOperation$: { subscribe: vi.fn() }
+    } as any;
+    component.joinRequested = { emit } as any;
+    component.onlineRoomCode = 'ROOM2';
+
+    component.joinOnlineRoom();
+
+    expect(component.isRoomOperationPending()).toBe(true);
+    expect(emit).not.toHaveBeenCalled();
   });
 });
