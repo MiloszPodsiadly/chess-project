@@ -20,6 +20,7 @@ export default defineConfig({
     baseURL,
     browserName: 'chromium',
     headless: true,
+    launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] },
     viewport: { width: 1440, height: 960 },
     actionTimeout: 15_000,
     navigationTimeout: 30_000,

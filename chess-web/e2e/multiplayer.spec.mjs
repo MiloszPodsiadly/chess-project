@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { test, expect } from '@playwright/test';
 
 const summarizeStompFrame = (payload) => {
@@ -22,14 +24,224 @@ const summarizeStompFrame = (payload) => {
   }
 };
 
+const observeOnlineAcknowledgements = (page) => {
+  const acknowledgements = { count: 0 };
+  page.on('websocket', socket => socket.on('framereceived', frame => {
+    if (summarizeStompFrame(frame.payload).eventType === 'helloAck') acknowledgements.count += 1;
+  }));
+  return acknowledgements;
+};
+
+const expectLobbyFitsViewport = async (page) => {
+  await expect.poll(() => page.evaluate(() => {
+    const sidebar = document.querySelector('.right-panel.online-lobby-layout');
+    const panel = document.querySelector('.online-lobby-panel');
+    return {
+      pageFits: document.documentElement.scrollHeight <= innerHeight + 1
+        && document.documentElement.scrollWidth <= innerWidth + 1,
+      sidebarFits: sidebar.scrollHeight <= sidebar.clientHeight + 1,
+      panelFits: !panel || panel.scrollHeight <= panel.clientHeight + 1
+    };
+  })).toEqual({ pageFits: true, sidebarFits: true, panelFits: true });
+  await expect(page.locator('.online-quick-actions button')).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('textbox', { name: /^(Username \(optional\)|Nazwa \(opcjonalnie\))$/ }))
+    .toBeInViewport({ ratio: 1 });
+};
+
+test('desktop lobby keeps its controls and forms in the viewport without an outer scrollbar', async ({ page }) => {
+  await page.goto('/game?mode=online');
+  await expect(page.locator('app-multiplayer-lobby')).toBeVisible();
+  for (const [width, height] of [[1024, 768], [1280, 600], [1280, 720], [1366, 768], [1440, 900], [1536, 720], [1920, 1080]]) {
+    await test.step(`${width}x${height}`, async () => {
+      await page.setViewportSize({ width, height });
+      await expectLobbyFitsViewport(page);
+      const arena = page.locator('.arena-fit-stage figure');
+      await expect(arena).toBeInViewport({ ratio: 1 });
+      await expect(arena.locator('.arena-caption')).toHaveCount(0);
+      const bottomSpace = await page.evaluate(() =>
+        document.querySelector('.right-panel').getBoundingClientRect().bottom
+        - document.querySelector('.settings-card').getBoundingClientRect().bottom);
+      expect(bottomSpace).toBeGreaterThanOrEqual(40);
+      expect(bottomSpace).toBeLessThanOrEqual(41);
+      for (const tab of ['Public rooms', 'Create', 'Join', 'Manage']) {
+        await page.getByRole('tab', { name: tab, exact: true }).click();
+        await expectLobbyFitsViewport(page);
+        if (tab === 'Public rooms') {
+          await expect(page.locator('.room-chat--embedded .chat-input')).toBeInViewport({ ratio: 1 });
+        } else if (tab === 'Create') {
+          await page.getByLabel('Public room', { exact: true }).uncheck();
+          await expect(page.getByLabel('Room password', { exact: true })).toBeInViewport({ ratio: 1 });
+          await expect(page.getByLabel('Room name', { exact: true })).toBeInViewport({ ratio: 1 });
+          await expectLobbyFitsViewport(page);
+        } else if (tab === 'Join') {
+          await expect(page.getByLabel('Join password', { exact: true })).toBeInViewport({ ratio: 1 });
+          await expect(page.getByLabel('Room code', { exact: true })).toBeInViewport({ ratio: 1 });
+        }
+      }
+      await page.getByRole('tab', { name: 'Manage', exact: true }).click();
+    });
+  }
+});
+
+test('Polish lobby keeps longer labels and password fields inside smaller desktop windows', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('lang', 'pl'));
+  await page.goto('/game?mode=online');
+  await expect(page.getByRole('tab', { name: 'Publiczne pokoje', exact: true })).toBeVisible();
+  for (const [width, height] of [[1024, 768], [1280, 600], [1536, 720]]) {
+    await page.setViewportSize({ width, height });
+    await page.getByRole('tab', { name: 'Publiczne pokoje', exact: true }).click();
+    await expectLobbyFitsViewport(page);
+    await expect(page.locator('.room-chat--embedded .chat-input')).toBeInViewport({ ratio: 1 });
+    await page.getByRole('tab', { name: 'Utworz', exact: true }).click();
+    await page.getByLabel('Pokoj publiczny', { exact: true }).uncheck();
+    await expect(page.getByLabel('Haslo pokoju', { exact: true })).toBeInViewport({ ratio: 1 });
+    await expectLobbyFitsViewport(page);
+    await page.getByRole('tab', { name: 'Dolacz', exact: true }).click();
+    await expect(page.getByLabel('Haslo do pokoju', { exact: true })).toBeInViewport({ ratio: 1 });
+    await expectLobbyFitsViewport(page);
+  }
+});
+
+test('Arena stays the same size when multiplayer finishes connecting after a mode switch', async ({ browser }) => {
+  for (const [width, height] of [[1280, 600], [1536, 720], [1440, 900]]) {
+    await test.step(`${width}x${height}`, async () => {
+      const context = await browser.newContext({ viewport: { width, height } });
+      const page = await context.newPage();
+      const acknowledgements = observeOnlineAcknowledgements(page);
+      const arenaLayout = () => page.evaluate(() =>
+        ['.arena-fit-stage figure', '.arena-fit-stage .arena-art', '.settings-card'].map(selector => {
+          const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect();
+          return { x, y, width, height };
+        }));
+      let releaseHandshake;
+      const handshake = new Promise(resolve => { releaseHandshake = resolve; });
+      const pendingRoutes = new Set();
+      const holdConnection = route => {
+        const continuation = handshake.then(() => route.continue());
+        pendingRoutes.add(continuation);
+        return continuation.finally(() => pendingRoutes.delete(continuation));
+      };
+      await page.route('**/ws/info*', holdConnection);
+      try {
+        await page.goto('/game?mode=bot');
+        await expect(page.locator('app-bot-setup')).toBeVisible();
+        const connectionRequested = page.waitForRequest('**/ws/info*');
+        await page.locator('.play-mode-switcher a[href="/game?mode=online"]').click();
+        await connectionRequested;
+        await expect(page.locator('.arena-fit-stage figure')).toBeVisible();
+        await expect(page.locator('.connection-status-banner')).toHaveCount(0);
+        await expect(page.locator('.arena-fit-stage .arena-caption')).toHaveCount(0);
+        await expect(page.locator('.online-board-status')).toHaveCount(0);
+        await expectLobbyFitsViewport(page);
+        const connecting = await arenaLayout();
+        releaseHandshake();
+        await expect.poll(() => acknowledgements.count, { timeout: 45_000 }).toBe(1);
+        await expect(page.locator('.connection-status-banner')).toHaveCount(0, { timeout: 45_000 });
+        const ready = await arenaLayout();
+        for (let region = 0; region < connecting.length; region += 1) {
+          for (const dimension of ['x', 'y', 'width', 'height']) {
+            expect(Math.abs(ready[region][dimension] - connecting[region][dimension]),
+              `Arena region ${region} ${dimension} must stay fixed when connecting completes`)
+              .toBeLessThanOrEqual(1);
+          }
+        }
+      } finally {
+        releaseHandshake();
+        await Promise.all([...pendingRoutes]);
+        await context.close();
+      }
+    });
+  }
+});
+
+test('bot and multiplayer boards stay aligned during same-component mode switching', async ({ page }) => {
+  const acknowledgements = observeOnlineAcknowledgements(page);
+  await page.goto('/game?mode=bot');
+  const boardLayout = () => page.evaluate(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    return ['.board-card', '.board-shell', 'app-board .board'].map(selector => {
+      const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect();
+      return { x, y, width, height };
+    });
+  });
+  for (const [width, height] of [[1024, 768], [1280, 600], [1280, 720], [1366, 768], [1440, 900], [1536, 720], [1920, 1080], [768, 1024], [390, 844], [375, 667]]) {
+    await test.step(`${width}x${height}`, async () => {
+      await page.setViewportSize({ width, height });
+      await expect(page.locator('app-bot-setup')).toBeVisible();
+      const bot = await boardLayout();
+      for (let cycle = 0; cycle < 2; cycle += 1) {
+        const previousAcknowledgements = acknowledgements.count;
+        await page.evaluate(() => {
+          const frames = [];
+          let stopped = false;
+          window.stopArenaRecording = () => { stopped = true; return frames; };
+          const sample = () => {
+            if (stopped) return;
+            const illustration = document.querySelector('.arena-fit-stage .arena-art');
+            const figure = document.querySelector('.arena-fit-stage figure');
+            if (illustration && figure) {
+              const art = illustration.getBoundingClientRect();
+              const frame = figure.getBoundingClientRect();
+              frames.push({ artWidth: art.width, artHeight: art.height,
+                frameWidth: frame.width, frameHeight: frame.height,
+                captionCount: document.querySelectorAll('.arena-fit-stage .arena-caption').length });
+            }
+            requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        });
+        await page.locator('.play-mode-switcher a[href="/game?mode=online"]').click();
+        await expect(page.locator('app-multiplayer-lobby')).toBeVisible();
+        await expect.poll(() => acknowledgements.count, { timeout: 45_000 }).toBe(previousAcknowledgements + 1);
+        await expect(page.locator('app-multiplayer-lobby .connection-banner')).toHaveCount(0, { timeout: 45_000 });
+        await expect(page.locator('.arena-fit-stage .arena-art')).toBeVisible();
+        const arenaFrames = await page.evaluate(async () => {
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          return window.stopArenaRecording();
+        });
+        expect(arenaFrames.length).toBeGreaterThan(0);
+        expect(arenaFrames.every(frame => frame.captionCount === 0)).toBe(true);
+        for (const dimension of ['artWidth', 'artHeight', 'frameWidth', 'frameHeight']) {
+          const values = arenaFrames.map(frame => frame[dimension]);
+          expect(Math.max(...values) - Math.min(...values),
+            `Arena ${dimension} must remain stable from its first rendered frame at ${width}x${height}`)
+            .toBeLessThanOrEqual(1);
+        }
+        const online = await boardLayout();
+        for (let region = 0; region < bot.length; region += 1) {
+          for (const dimension of ['x', 'y', 'width', 'height']) {
+            expect(Math.abs(online[region][dimension] - bot[region][dimension]),
+              `Board region ${region} ${dimension} must align at ${width}x${height}`).toBeLessThanOrEqual(1);
+          }
+        }
+        if (width > 960) await expectLobbyFitsViewport(page);
+        await page.locator('.play-mode-switcher a[href="/game?mode=bot"]').click();
+        await expect(page.locator('app-bot-setup')).toBeVisible();
+        expect(await boardLayout()).toEqual(bot);
+        if (width > 960) {
+          expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true);
+        }
+      }
+    });
+  }
+});
+
 test('two players and a spectator complete a real multiplayer game', async ({ browser }, testInfo) => {
   const runId = randomUUID().replaceAll('-', '').slice(0, 8).toUpperCase();
-  const hostName = `Host${runId}`;
-  const secondHostName = `Other${runId}`;
-  const guestName = `Guest${runId}`;
-  const spectatorName = `Spec${runId}`;
-  const roomName = `E2E ${runId}`;
-  const secondRoomName = `E2E Other ${runId}`;
+  const evidenceDirectory = process.env.MULTIPLAYER_EVIDENCE_DIR;
+  const hostName = evidenceDirectory ? 'Milo' : `Host${runId}`;
+  const secondHostName = evidenceDirectory ? 'BlitzHost' : `Other${runId}`;
+  const guestName = evidenceDirectory ? 'Alex' : `Guest${runId}`;
+  const spectatorName = evidenceDirectory ? 'Sam' : `Spec${runId}`;
+  const roomName = evidenceDirectory ? 'Evening Rapid' : `E2E ${runId}`;
+  const secondRoomName = evidenceDirectory ? 'Friendly Blitz' : `E2E Other ${runId}`;
+  const evidenceScreenshots = [];
+  const captureEvidence = async (name, page) => {
+    if (!evidenceDirectory) return;
+    await mkdir(evidenceDirectory, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDirectory, `${name}.png`), fullPage: true });
+    evidenceScreenshots.push(`${name}.png`);
+  };
   const contexts = [];
   const clients = [];
   const pageErrors = [];
@@ -94,8 +306,33 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
   const clockSeconds = (text) => text.trim().split(':').map(Number)
     .reduce((total, part) => total * 60 + part, 0);
 
+  const boardBounds = async (page) => page.locator('app-board .board').evaluate((element) => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return { x, y, width, height };
+  });
+  const expectBoardBoundsToMatch = (actual, expected) => {
+    for (const dimension of ['x', 'y', 'width', 'height']) {
+      expect(Math.abs(actual[dimension] - expected[dimension]), `board ${dimension} should stay in place`)
+        .toBeLessThanOrEqual(1);
+    }
+  };
+
   try {
     const host = await openOnline(hostName);
+    await expect(host.locator('.lobby-tabs button.active')).toHaveCount(0);
+    await expect(host.locator('.online-arena-stage app-chess-arena-animation')).toBeVisible();
+    await host.getByRole('tab', { name: 'Public rooms', exact: true }).click();
+    await expect(host.locator('.online-lobby-panel #online-panel-public')).toBeVisible();
+    await expect(host.locator('.online-arena-stage app-chess-arena-animation')).toHaveCount(0);
+    await expect(roomChat(host).getByRole('textbox')).toBeDisabled();
+    await expect(roomChat(host)).toContainText('Join or create a room');
+    const publicPanelBounds = await host.locator('#online-panel-public').boundingBox();
+    const embeddedChatBounds = await roomChat(host).boundingBox();
+    expect(Math.abs((embeddedChatBounds.y - publicPanelBounds.y) / publicPanelBounds.height - 0.5))
+      .toBeLessThan(0.05);
+    await host.getByRole('tab', { name: 'Public rooms', exact: true }).click();
+    await expect(host.locator('.online-arena-stage app-chess-arena-animation')).toBeVisible();
+
     const secondHost = await openOnline(secondHostName);
     const guest = await openOnline(guestName);
 
@@ -117,6 +354,7 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     const roomCode = (await hostManagement.locator('.invite-meta strong').innerText()).trim();
     expect(roomCode).toMatch(/^[A-Z0-9]{6}$/);
     await expect(roomChat(host)).toBeVisible();
+    await expectLobbyFitsViewport(host);
 
     await secondHost.getByRole('tab', { name: 'Create', exact: true }).click();
     await secondHost.getByLabel('Room name').fill(secondRoomName);
@@ -130,12 +368,15 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await guest.getByRole('tab', { name: 'Join', exact: true }).click();
     await expect(guest.getByLabel('Join password')).toHaveAttribute('type', 'password');
     await guest.getByRole('tab', { name: 'Public rooms', exact: true }).click();
-    const primaryRoomRow = guest.locator('.room-row').filter({ hasText: roomName });
-    const competingRoomRow = guest.locator('.room-row').filter({ hasText: secondRoomName });
+    const primaryRoomRow = guest.locator('.room-tile').filter({ hasText: roomName });
+    const competingRoomRow = guest.locator('.room-tile').filter({ hasText: secondRoomName });
     await expect(primaryRoomRow).toBeVisible({ timeout: 20_000 });
     await expect(competingRoomRow).toBeVisible({ timeout: 20_000 });
+    await captureEvidence('lobby-public-rooms', guest);
+    expect(await guest.locator('.room-grid').evaluate(element =>
+      getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBeGreaterThan(1);
     await guest.evaluate(([firstName, secondName]) => {
-      const rowFor = (name) => [...document.querySelectorAll('.room-row')]
+      const rowFor = (name) => [...document.querySelectorAll('.room-tile')]
         .find(row => row.querySelector('.room-name')?.textContent.trim() === name);
       const firstJoin = rowFor(firstName)?.querySelector('.room-actions button');
       const secondJoin = rowFor(secondName)?.querySelector('.room-actions button');
@@ -144,6 +385,8 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
       secondJoin.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     }, [roomName, secondRoomName]);
     await expect(roomChat(guest)).toBeVisible({ timeout: 20_000 });
+    await expect(roomChat(guest)).toHaveCount(1);
+    await expect(roomChat(guest).getByRole('textbox')).toBeEnabled({ timeout: 20_000 });
     const guestNetworkEvents = clients.find(client => client.name === guestName).networkEvents;
     await expect.poll(() => guestNetworkEvents.filter(event =>
       event.direction === 'sent' && event.command === 'SEND' && event.destination === '/app/joinRoom').length
@@ -154,13 +397,19 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await expect(guest.locator('#online-panel-manage')).toContainText(hostName);
     await expect(guest.locator('#online-panel-manage')).not.toContainText(secondHostName);
     await expect(guest.locator('#online-panel-manage')).toContainText(guestName);
+    await guest.getByRole('tab', { name: 'Public rooms', exact: true }).click();
+    await expect(guest.locator('.online-lobby-panel .room-chat')).toBeVisible();
+    await expect(roomChat(guest)).toHaveCount(1);
+    await expectLobbyFitsViewport(guest);
 
-    const hostMessage = `hello-${runId}`;
-    const guestMessage = `ready-${runId}`;
+    const hostMessage = evidenceDirectory ? 'Ready for a rapid game?' : `hello-${runId}`;
+    const guestMessage = evidenceDirectory ? 'Ready. Good luck!' : `ready-${runId}`;
     await sendChat(host, hostMessage);
     await expect(roomChat(guest).getByText(hostMessage, { exact: true })).toBeVisible();
     await sendChat(guest, guestMessage);
     await expect(roomChat(host).getByText(guestMessage, { exact: true })).toBeVisible();
+    await captureEvidence('lobby-room-chat', guest);
+    await captureEvidence('multiplayer-room-management', host);
 
     const startGame = host.getByRole('button', { name: 'Start game', exact: true });
     await expect(startGame).toBeEnabled({ timeout: 20_000 });
@@ -168,6 +417,7 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     gameStarted = true;
     await expect(host.locator('.online-actions-card')).toBeVisible({ timeout: 20_000 });
     await expect(guest.locator('.online-actions-card')).toBeVisible({ timeout: 20_000 });
+    await expect(host.locator('.online-actions-card .connection-banner').filter({ hasText: /^\s*$/ })).toHaveCount(0);
 
     const hostColorText = (await host.locator('.online-actions-card .card-subtitle').innerText()).toUpperCase();
     const guestColorText = (await guest.locator('.online-actions-card .card-subtitle').innerText()).toUpperCase();
@@ -200,6 +450,7 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
       await expect(page.getByRole('button', { name: 'e5', exact: true }).locator('img')).toBeVisible();
       await expect(page.getByRole('button', { name: 'e7', exact: true }).locator('img')).toHaveCount(0);
     }
+    const onlineBoardBeforeModeSwitch = await boardBounds(host);
 
     const hostNetworkEvents = clients.find(client => client.name === hostName).networkEvents;
     const hostGameSubscriptions = () => hostNetworkEvents.filter(event =>
@@ -227,6 +478,8 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await botSetup.getByRole('button', { name: 'Start Game', exact: true }).click();
     await expect(botSetup).toHaveCount(0);
     await expect(host.locator('.bot-actions-card')).toBeVisible();
+    const botBoardAfterModeSwitch = await boardBounds(host);
+    expectBoardBoundsToMatch(botBoardAfterModeSwitch, onlineBoardBeforeModeSwitch);
 
     await navigateModeInPlace(host, 'online');
     await expect(gameShell).toHaveAttribute('data-e2e-component-instance', 'preserved');
@@ -239,6 +492,7 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await expect(host.getByRole('button', { name: 'e5', exact: true }).locator('img')).toBeVisible();
     await expect(host.getByRole('button', { name: 'e2', exact: true }).locator('img')).toHaveCount(0);
     await expect(host.getByRole('button', { name: 'e7', exact: true }).locator('img')).toHaveCount(0);
+    expectBoardBoundsToMatch(await boardBounds(host), onlineBoardBeforeModeSwitch);
     const recoveredClocks = await host.locator('.online-actions-card .player-clock').allInnerTexts();
     expect(clockSeconds(recoveredClocks[0])).toBeLessThanOrEqual(clockSeconds(playerAndClockState.clocks[0]));
     expect(clockSeconds(recoveredClocks[1])).toBe(clockSeconds(playerAndClockState.clocks[1]));
@@ -275,10 +529,11 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await expect(guest.locator('.multiplayer-turn-status')).toContainText('Game in progress', { timeout: 45_000 });
     await expect(guest.locator('app-board button.square.last-move[aria-label="e5"]')).toBeVisible();
 
+    await captureEvidence('multiplayer-live-game', host);
     const spectator = await openOnline(spectatorName);
     await spectator.getByRole('tab', { name: 'Public rooms', exact: true }).click();
-    const roomRow = spectator.locator('.room-row').filter({ hasText: roomName });
-    await expect(roomRow).toContainText('IN_GAME', { timeout: 20_000 });
+    const roomRow = spectator.locator('.room-tile').filter({ hasText: roomName });
+    await expect(roomRow).toContainText('Game in progress', { timeout: 20_000 });
     await roomRow.getByRole('button', { name: 'Spectate', exact: true }).click();
     await expect(spectator.locator('.online-actions-card')).toContainText('Spectator', {
       timeout: 20_000
@@ -287,6 +542,10 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await spectator.getByRole('button', { name: 'd4', exact: true }).click();
     await expect(spectator.locator('app-board button.square.last-move[aria-label="e5"]')).toBeVisible();
     await expect(spectator.getByRole('button', { name: 'd4', exact: true }).locator('img')).toHaveCount(0);
+    await expect(spectator.locator('.online-actions-card').getByRole('button', { name: 'Resign', exact: true })).toHaveCount(0);
+    await expect(spectator.locator('.online-actions-card').getByRole('button', { name: 'Offer draw', exact: true })).toHaveCount(0);
+    await expect(spectator.locator('.online-actions-card .connection-banner').filter({ hasText: /^\s*$/ })).toHaveCount(0);
+    await captureEvidence('multiplayer-spectator', spectator);
 
     await host.locator('.online-actions-card').getByRole('button', { name: 'Resign', exact: true }).click();
     await expect(guest.locator('.multiplayer-turn-status')).toHaveText(/Game finished/, {
@@ -314,6 +573,21 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await expect(spectator.locator('#multiplayer-review-history app-move-history'))
       .toContainText('2 / 2');
     expect(pageErrors).toEqual([]);
+    if (evidenceDirectory) {
+      await writeFile(resolve(evidenceDirectory, 'multiplayer-report.json'), JSON.stringify({
+        timestamp: new Date().toISOString(), runId,
+        baseUrl: testInfo.project.use.baseURL,
+        browser: `Chromium ${browser.version()}`,
+        roomCode, roomName, hostName, guestName, spectatorName,
+        checks: [
+          'room creation and management', 'competing room joins remain serialized',
+          'room chat works in the public-room panel', 'legal moves synchronize',
+          'same-component mode switching and refresh restore the game',
+          'spectator remains read-only', 'resignation and finished-game replay'
+        ],
+        screenshots: evidenceScreenshots, runtimeErrors: pageErrors
+      }, null, 2) + '\n');
+    }
 
     await testInfo.attach('multiplayer-smoke-summary', {
       body: Buffer.from(JSON.stringify({

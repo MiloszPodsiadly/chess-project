@@ -2,6 +2,8 @@
 
 The `multiplayer-e2e` GitHub Actions job runs a real Chromium browser against the Spring Boot server and an isolated PostgreSQL 16 service. It creates independent browser contexts for the host, guest, and spectator. Room operations, chat, moves, spectator permissions, resignation, and review are exercised through accessible UI controls. The test does not use Angular debug globals or mocked server state.
 
+The suite also checks desktop lobby containment in English and Polish, native browser scrollbars, stable board alignment across ten viewport sizes, and the Arena's dimensions from its first rendered frame during repeated mode switches. A delayed real connection handshake verifies that connecting does not resize the Arena or reveal passive connection banners.
+
 The app served by Docker is available at `http://localhost:3000`; its frontend proxies `/ws` to Spring Boot. The local test command below uses Angular's dev server on `http://localhost:4200` and connects directly to Spring Boot on port 8080. Port 4200 is only the test/dev-server address.
 
 The browser keeps `sockjs-client` because Spring currently exposes `/ws` with `.withSockJS()`, so SockJS is the active STOMP transport and preserves its fallback options. The real-browser smoke test exercises this pairing. Removing SockJS would require changing and revalidating both ends of the transport.
@@ -39,6 +41,8 @@ The backend must be reachable at `http://localhost:8080`; the default test front
 
 Playwright writes its HTML report to `chess-web/playwright-report/`. On failure it saves screenshots, a trace, and UI diagnostics under `chess-web/test-results/multiplayer/`; open a trace with `npx playwright show-trace <trace.zip>`.
 
+For screenshot reviews against an isolated stack, set `MULTIPLAYER_EVIDENCE_DIR` to the output directory. The live multiplayer scenario then captures public rooms, room chat, management, active play and spectator views, and writes `multiplayer-report.json`. These captures use actual server-created rooms and readable player names.
+
 ## Coverage boundary
 
-This PR gate covers room creation and joining, competing join attempts, initial participant state, two-way chat, authoritative move synchronization for `e2-e4` and `e7-e5`, wrong-turn rejection, spectator read-only behavior, resignation delivery, finished-game replay, Online-to-Bot-to-Online recovery, and refresh during an active game. Detailed reconnect timing, unauthorized raw STOMP subscription attacks, checkmate/draw permutations, and long-running visual/performance reviews remain covered by their focused backend/unit or manual evidence checks rather than this bounded browser smoke.
+This PR gate covers room creation and joining, competing join attempts, initial participant state, two-way chat, authoritative move synchronization for `e2-e4` and `e7-e5`, wrong-turn rejection, spectator read-only behavior and absence of player-only controls, resignation delivery, finished-game replay, Online-to-Bot-to-Online recovery, and refresh during an active game. Detailed reconnect timing, unauthorized raw STOMP subscription attacks, checkmate/draw permutations, and long-running visual/performance reviews remain covered by their focused backend/unit or manual evidence checks rather than this bounded browser smoke.

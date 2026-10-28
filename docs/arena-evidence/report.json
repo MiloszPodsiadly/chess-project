@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-28T13:32:07.880Z",
+  "timestamp": "2026-10-28T18:03:06.308Z",
   "browser": {
     "product": "Chromium 156.0.8078.4"
   },
@@ -70,6 +70,18 @@
       "width": 720,
       "height": 450,
       "fullPage": true
+    },
+    {
+      "name": "bot-setup",
+      "width": 1440,
+      "height": 900,
+      "fullPage": true
+    },
+    {
+      "name": "lobby-idle",
+      "width": 1440,
+      "height": 900,
+      "fullPage": true
     }
   ],
   "benchmarks": [
@@ -79,7 +91,7 @@
       "height": 900,
       "cpuSlowdown": 1,
       "state": "LOBBY",
-      "fps": 60.00265939764644,
+      "fps": 60.00166209590292,
       "p95FrameMs": 16.700000000000728,
       "maxFrameMs": 16.80000000000109,
       "longTasks": 0,
@@ -93,7 +105,7 @@
       "cpuSlowdown": 4,
       "state": "LOBBY",
       "fps": 60.00265939764642,
-      "p95FrameMs": 16.799999999999272,
+      "p95FrameMs": 16.700000000000728,
       "maxFrameMs": 16.80000000000109,
       "longTasks": 0,
       "maxLongTaskMs": 0,
@@ -105,12 +117,12 @@
       "height": 667,
       "cpuSlowdown": 4,
       "state": "LOBBY",
-      "fps": 59.83644704474439,
-      "p95FrameMs": 16.799999999999272,
-      "maxFrameMs": 33.30000000000291,
+      "fps": 60.00166209590294,
+      "p95FrameMs": 16.700000000000728,
+      "maxFrameMs": 16.80000000000291,
       "longTasks": 0,
       "maxLongTaskMs": 0,
-      "frames": 360
+      "frames": 361
     },
     {
       "name": "waiting-cpu4",
@@ -120,7 +132,7 @@
       "state": "WAITING_FOR_OPPONENT (CSS fixture)",
       "fps": 60.00265939764642,
       "p95FrameMs": 16.700000000000728,
-      "maxFrameMs": 16.80000000000291,
+      "maxFrameMs": 16.799999999999272,
       "longTasks": 0,
       "maxLongTaskMs": 0,
       "frames": 361
@@ -136,7 +148,13 @@
     "homePolishFitsAt200PercentZoom": true,
     "homePlayBotNavigates": true,
     "homePlayOnlineNavigates": true,
+    "botAndMultiplayerBoardsAligned": true,
+    "lobbyContentFitsSetupCard": true,
+    "lobbyArenaVisibleWithNoDefaultSelection": true,
+    "allLobbyPanelsReplaceArena": true,
+    "publicRoomTilesAndChatFitAtEveryViewport": true,
     "lobbyNoHorizontalOverflowAtEveryViewport": true,
+    "lobbyContentFitsAtEveryViewport": true,
     "activeGameResponsiveAtEveryViewport": true,
     "matchAvailableImmediately": true,
     "duplicateMatchIgnored": true,
@@ -160,54 +178,128 @@
     "verticalScrollRequired": true,
     "polishDescriptionClipped": false
   },
+  "modeBoardLayout": {
+    "botSetup": {
+      "card": {
+        "x": 18,
+        "y": 12,
+        "width": 832.796875,
+        "height": 876
+      },
+      "board": {
+        "x": 31,
+        "y": 32.796875,
+        "width": 806.796875,
+        "height": 804
+      },
+      "square": {
+        "x": 32.390625,
+        "y": 32.796875,
+        "width": 804,
+        "height": 804
+      }
+    },
+    "multiplayerLobby": {
+      "card": {
+        "x": 18,
+        "y": 12,
+        "width": 832.796875,
+        "height": 876
+      },
+      "board": {
+        "x": 31,
+        "y": 32.796875,
+        "width": 806.796875,
+        "height": 804
+      },
+      "square": {
+        "x": 32.390625,
+        "y": 32.796875,
+        "width": 804,
+        "height": 804
+      }
+    }
+  },
   "lobbyResponsive": [
     {
       "width": 375,
       "height": 667,
       "horizontalOverflow": false,
-      "verticalScrollRequired": true
+      "verticalScrollRequired": true,
+      "quickStartInsideCard": true,
+      "roomColumns": 2,
+      "chatInBottomHalf": true,
+      "chatComposerInsidePanel": true
     },
     {
       "width": 390,
       "height": 844,
       "horizontalOverflow": false,
-      "verticalScrollRequired": true
+      "verticalScrollRequired": true,
+      "quickStartInsideCard": true,
+      "roomColumns": 2,
+      "chatInBottomHalf": true,
+      "chatComposerInsidePanel": true
     },
     {
       "width": 768,
       "height": 1024,
       "horizontalOverflow": false,
-      "verticalScrollRequired": true
+      "verticalScrollRequired": true,
+      "quickStartInsideCard": true,
+      "roomColumns": 4,
+      "chatInBottomHalf": true,
+      "chatComposerInsidePanel": true
     },
     {
       "width": 1024,
       "height": 768,
       "horizontalOverflow": false,
-      "verticalScrollRequired": false
+      "verticalScrollRequired": false,
+      "quickStartInsideCard": true,
+      "roomColumns": 2,
+      "chatInBottomHalf": true,
+      "chatComposerInsidePanel": true
     },
     {
       "width": 1280,
       "height": 720,
       "horizontalOverflow": false,
-      "verticalScrollRequired": false
+      "verticalScrollRequired": false,
+      "quickStartInsideCard": true,
+      "roomColumns": 3,
+      "chatInBottomHalf": true,
+      "chatComposerInsidePanel": true
     },
     {
       "width": 1366,
       "height": 768,
       "horizontalOverflow": false,
-      "verticalScrollRequired": false
+      "verticalScrollRequired": false,
+      "quickStartInsideCard": true,
+      "roomColumns": 3,
+      "chatInBottomHalf": true,
+      "chatComposerInsidePanel": true
     },
     {
       "width": 1440,
       "height": 900,
       "horizontalOverflow": false,
-      "verticalScrollRequired": false
+      "verticalScrollRequired": false,
+      "quickStartInsideCard": true,
+      "roomColumns": 3,
+      "chatInBottomHalf": true,
+      "chatComposerInsidePanel": true
     },
     {
       "width": 1920,
       "height": 1080,
       "horizontalOverflow": false,
-      "verticalScrollRequired": false
+      "verticalScrollRequired": false,
+      "quickStartInsideCard": true,
+      "roomColumns": 4,
+      "chatInBottomHalf": true,
+      "chatComposerInsidePanel": true
     }
   ],
   "activeGameResponsive": [
@@ -280,14 +372,14 @@
     "cycles": 20,
     "before": {
       "heap": {
-        "usedSize": 4033508,
-        "totalSize": 4456448,
-        "embedderHeapUsedSize": 2520568,
-        "backingStorageSize": 696586
+        "usedSize": 4059584,
+        "totalSize": 4718592,
+        "embedderHeapUsedSize": 2585096,
+        "backingStorageSize": 717415
       },
       "dom": {
         "documents": 1,
-        "nodes": 769,
+        "nodes": 770,
         "jsEventListeners": 15
       }
     },
@@ -295,81 +387,81 @@
       {
         "cycles": 1,
         "heap": {
-          "usedSize": 4288232,
-          "totalSize": 4718592,
-          "embedderHeapUsedSize": 2550664,
-          "backingStorageSize": 696768
+          "usedSize": 4309832,
+          "totalSize": 5242880,
+          "embedderHeapUsedSize": 2466392,
+          "backingStorageSize": 717597
         },
         "dom": {
           "documents": 1,
-          "nodes": 769,
+          "nodes": 770,
           "jsEventListeners": 15
         }
       },
       {
         "cycles": 5,
         "heap": {
-          "usedSize": 4894840,
+          "usedSize": 4921956,
           "totalSize": 5242880,
-          "embedderHeapUsedSize": 2568560,
-          "backingStorageSize": 696768
+          "embedderHeapUsedSize": 2543336,
+          "backingStorageSize": 717597
         },
         "dom": {
           "documents": 1,
-          "nodes": 769,
+          "nodes": 770,
           "jsEventListeners": 15
         }
       },
       {
         "cycles": 10,
         "heap": {
-          "usedSize": 5103620,
-          "totalSize": 5505024,
-          "embedderHeapUsedSize": 2712112,
-          "backingStorageSize": 696768
+          "usedSize": 5119200,
+          "totalSize": 5767168,
+          "embedderHeapUsedSize": 2553440,
+          "backingStorageSize": 717597
         },
         "dom": {
           "documents": 1,
-          "nodes": 769,
+          "nodes": 770,
           "jsEventListeners": 15
         }
       },
       {
         "cycles": 20,
         "heap": {
-          "usedSize": 5217328,
-          "totalSize": 5767168,
-          "embedderHeapUsedSize": 2585808,
-          "backingStorageSize": 696768
+          "usedSize": 5235916,
+          "totalSize": 6029312,
+          "embedderHeapUsedSize": 2688344,
+          "backingStorageSize": 717597
         },
         "dom": {
           "documents": 1,
-          "nodes": 769,
+          "nodes": 770,
           "jsEventListeners": 15
         }
       }
     ],
     "after": {
       "heap": {
-        "usedSize": 5217328,
-        "totalSize": 5767168,
-        "embedderHeapUsedSize": 1991784,
-        "backingStorageSize": 696768
+        "usedSize": 5235916,
+        "totalSize": 6029312,
+        "embedderHeapUsedSize": 2012784,
+        "backingStorageSize": 717597
       },
       "dom": {
         "documents": 1,
-        "nodes": 769,
+        "nodes": 770,
         "jsEventListeners": 15
       }
     },
-    "retainedHeapDelta": 1183820
+    "retainedHeapDelta": 1176332
   },
   "runtimeErrors": [],
   "sceneChunks": [
     {
-      "path": "chunk-CCFKSZQ5.js",
-      "bytes": 22207,
-      "gzipBytes": 7240
+      "path": "chunk-FXO5CMSI.js",
+      "bytes": 22679,
+      "gzipBytes": 7365
     }
   ]
 }

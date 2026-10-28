@@ -52,7 +52,7 @@ try {
     await sleep(100);
     await until(`location.href === ${JSON.stringify(url + (url === devUrl || url === prodUrl ? '/' : ''))} && !!document.querySelector('app-chess-arena-animation svg')`);
   };
-  const settle = () => evaluate(`document.querySelector('app-chess-arena-animation').getAnimations({subtree:true}).forEach(a=>{if(a.effect.getTiming().iterations!==Infinity)a.finish()}); true`);
+  const settle = () => evaluate(`document.querySelector('app-chess-arena-animation')?.getAnimations({subtree:true}).forEach(a=>{if(a.effect.getTiming().iterations!==Infinity)a.finish()}); true`);
   const screenshot = async name => {
     const { cssContentSize } = await send('Page.getLayoutMetrics');
     const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true,
@@ -167,18 +167,109 @@ try {
   const gamePage = `ng.getComponent(document.querySelector('app-game-page'))`;
   // Isolate the visual fixture from the dev server's asynchronous socket-close callback.
   await evaluate(`{const p=${gamePage};if(p.multiplayer.client)p.multiplayer.client.onWebSocketClose=()=>{};p.multiplayer.disconnect();p.multiplayer.connected$.next(true);p.multiplayer.connectionState$.next('READY');p.multiplayer.ready$.next(true);ng.applyChanges(p)};true`);
+  await viewport(1440, 900);
+  await sleep(100);
+  const boardLayout = () => evaluate(`(() => {
+    const rect = selector => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const { x, y, width, height } = element.getBoundingClientRect();
+      return { x, y, width, height };
+    };
+    return { card: rect('.board-card'), board: rect('app-board'), square: rect('app-board .board') };
+  })()`);
+  await evaluate(`document.querySelector('.play-mode-switcher a[href="/game?mode=bot"]')?.click();true`);
+  await until(`new URLSearchParams(location.search).get('mode') === 'bot' && !!document.querySelector('app-bot-setup')`);
   await settle();
+  const botSetupBoard = await boardLayout();
+  await screenshot('bot-setup');
+  report.screenshots.push({ name: 'bot-setup', width: 1440, height: 900, fullPage: true });
+  await evaluate(`document.querySelector('.play-mode-switcher a[href="/game?mode=online"]')?.click();true`);
+  await until(`new URLSearchParams(location.search).get('mode') === 'online' && !!document.querySelector('app-multiplayer-lobby')`);
+  await evaluate(`{const p=${gamePage};if(p.multiplayer.client)p.multiplayer.client.onWebSocketClose=()=>{};p.multiplayer.disconnect();p.multiplayer.connected$.next(true);p.multiplayer.connectionState$.next('READY');p.multiplayer.ready$.next(true);ng.applyChanges(p)};true`);
+  await settle();
+  const lobbyBoard = await boardLayout();
+  for (const region of ['card', 'board', 'square']) {
+    for (const dimension of ['x', 'y', 'width', 'height']) {
+      assert.ok(Math.abs(botSetupBoard[region][dimension] - lobbyBoard[region][dimension]) <= 1,
+        `Bot and multiplayer ${region} ${dimension} must align`);
+    }
+  }
+  const lobbyCardLayout = await evaluate(`(() => {
+    const card = document.querySelector('.settings-card').getBoundingClientRect();
+    const lobby = document.querySelector('app-multiplayer-lobby').getBoundingClientRect();
+    const quickStart = document.querySelector('.online-quick-actions .arena-button').getBoundingClientRect();
+    return { cardBottom: card.bottom, lobbyBottom: lobby.bottom, quickStartBottom: quickStart.bottom };
+  })()`);
+  assert.ok(lobbyCardLayout.quickStartBottom <= lobbyCardLayout.cardBottom + 1,
+    'Quick start must stay inside the multiplayer setup card');
+  assert.ok(lobbyCardLayout.lobbyBottom <= lobbyCardLayout.cardBottom + 1,
+    'The multiplayer lobby must stay inside its setup card');
+  const defaultLobbyState = await evaluate(`({
+    selectedTabs: document.querySelectorAll('.lobby-tabs [aria-selected="true"]').length,
+    arenaVisible: !!document.querySelector('.online-arena-stage app-chess-arena-animation'),
+    setupVisible: !!document.querySelector('app-multiplayer-lobby')
+  })`);
+  assert.equal(defaultLobbyState.selectedTabs, 0, 'No lobby tab should be selected by default');
+  assert.equal(defaultLobbyState.arenaVisible, true, 'The Arena should be visible before opening a lobby panel');
+  assert.equal(defaultLobbyState.setupVisible, true, 'The multiplayer controls should stay available');
+  report.modeBoardLayout = { botSetup: botSetupBoard, multiplayerLobby: lobbyBoard };
+  report.checks.botAndMultiplayerBoardsAligned = true;
+  report.checks.lobbyContentFitsSetupCard = true;
+  report.checks.lobbyArenaVisibleWithNoDefaultSelection = true;
   await screenshot('lobby-idle');
+  report.screenshots.push({ name: 'lobby-idle', width: 1440, height: 900, fullPage: true });
+  for (const [view, panelId] of [
+    ['public', 'online-panel-public'],
+    ['create', 'online-panel-create'],
+    ['join', 'online-panel-join'],
+    ['manage', 'online-panel-manage']
+  ]) {
+    await evaluate(`document.querySelector('#online-tab-${view}')?.click();true`);
+    await until(`!!document.querySelector('.online-lobby-panel #${panelId}')`);
+    assert.equal(await evaluate(`!!document.querySelector('.online-arena-stage app-chess-arena-animation')`), false,
+      `${view} panel should replace the Arena illustration`);
+  }
+  await evaluate(`document.querySelector('#online-tab-manage')?.click();true`);
+  await until(`!!document.querySelector('.online-arena-stage app-chess-arena-animation') &&
+    document.querySelectorAll('.lobby-tabs [aria-selected="true"]').length === 0`);
+  report.checks.allLobbyPanelsReplaceArena = true;
   report.lobbyResponsive = [];
+  await evaluate(`document.querySelector('#online-tab-public')?.click();true`);
+  await until(`!!document.querySelector('.room-chat--embedded')`);
   for (const [width, height] of responsiveViewports) {
     await viewport(width, height);
     const layout = await evaluate(`({innerWidth,scrollWidth:document.documentElement.scrollWidth,
-      innerHeight,scrollHeight:document.documentElement.scrollHeight})`);
+      innerHeight,scrollHeight:document.documentElement.scrollHeight,
+      cardBottom:document.querySelector('.settings-card')?.getBoundingClientRect().bottom,
+      lobbyBottom:document.querySelector('app-multiplayer-lobby')?.getBoundingClientRect().bottom,
+      quickStartBottom:document.querySelector('.online-quick-actions .arena-button')?.getBoundingClientRect().bottom,
+      panel:document.querySelector('#online-panel-public').getBoundingClientRect().toJSON(),
+      roomGrid:document.querySelector('.room-grid').getBoundingClientRect().toJSON(),
+      chat:document.querySelector('.room-chat--embedded').getBoundingClientRect().toJSON(),
+      composer:document.querySelector('.room-chat--embedded .chat-input').getBoundingClientRect().toJSON(),
+      roomColumns:getComputedStyle(document.querySelector('.room-grid')).gridTemplateColumns.split(' ').length})`);
     assert.ok(layout.scrollWidth <= layout.innerWidth + 1, `Lobby horizontal overflow at ${width}x${height}`);
+    assert.ok(layout.quickStartBottom <= layout.cardBottom + 1,
+      `Quick start must stay inside the lobby card at ${width}x${height}`);
+    assert.ok(layout.lobbyBottom <= layout.cardBottom + 1,
+      `Lobby content must stay inside its card at ${width}x${height}`);
+    assert.ok(Math.abs((layout.chat.top - layout.panel.top) / layout.panel.height - .5) < .05,
+      `Room chat must occupy the bottom half at ${width}x${height}`);
+    assert.ok(layout.roomColumns >= 2, `Public rooms must use tiles at ${width}x${height}`);
+    assert.ok(layout.roomGrid.bottom <= layout.chat.top + 1,
+      `Room tiles must stay above the chat at ${width}x${height}`);
+    assert.ok(layout.composer.bottom <= layout.panel.bottom + 1,
+      `Chat composer must stay inside its panel at ${width}x${height}`);
     report.lobbyResponsive.push({ width, height, horizontalOverflow: false,
-      verticalScrollRequired: layout.scrollHeight > layout.innerHeight });
+      verticalScrollRequired: layout.scrollHeight > layout.innerHeight, quickStartInsideCard: true,
+      roomColumns: layout.roomColumns, chatInBottomHalf: true, chatComposerInsidePanel: true });
   }
+  await evaluate(`document.querySelector('#online-tab-public')?.click();true`);
+  await until(`!!document.querySelector('.online-arena-stage app-chess-arena-animation')`);
+  report.checks.publicRoomTilesAndChatFitAtEveryViewport = true;
   report.checks.lobbyNoHorizontalOverflowAtEveryViewport = true;
+  report.checks.lobbyContentFitsAtEveryViewport = true;
   await viewport(1440, 900);
   await evaluate(`{const p=${gamePage};p.multiplayer.queueState$.next('QUEUED');ng.applyChanges(p)};true`);
   await sleep(450);
