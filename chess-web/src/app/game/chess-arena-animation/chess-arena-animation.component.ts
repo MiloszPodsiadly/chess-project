@@ -19,6 +19,7 @@ export class ChessArenaAnimationComponent implements AfterViewInit, OnChanges, O
   @Input() lang: 'en' | 'pl' = 'en';
   @Input() variant: ChessArenaVariant = 'LOBBY';
   @Input() matchId: string | null = null;
+  @Input() showCaption = true;
   readonly sceneId = `enchanted-arena-${nextSceneId++}`;
   readonly squares = ARENA_SQUARES;
   readonly pieces = ARENA_PIECES;

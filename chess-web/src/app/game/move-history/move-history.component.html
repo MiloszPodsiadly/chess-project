@@ -1,11 +1,28 @@
 <div class="moves">
+  <div class="move-navigation" *ngIf="interactive" role="group" [attr.aria-label]="navigationLabels.group">
+    <button type="button" class="ghost" [disabled]="currentPositionIndex === 0" (click)="setPosition(0)">{{ navigationLabels.first }}</button>
+    <button type="button" class="ghost" [disabled]="currentPositionIndex === 0" (click)="setPosition(currentPositionIndex - 1)">{{ navigationLabels.previous }}</button>
+    <span aria-live="polite">{{ currentPositionIndex }} / {{ moves.length }}</span>
+    <button type="button" class="ghost" [disabled]="currentPositionIndex === moves.length" (click)="setPosition(currentPositionIndex + 1)">{{ navigationLabels.next }}</button>
+    <button type="button" class="ghost" [disabled]="currentPositionIndex === moves.length" (click)="setPosition(moves.length)">{{ navigationLabels.last }}</button>
+  </div>
   <div class="move-row" *ngFor="let row of rows">
     <span class="move-no">{{ row.moveNumber }}</span>
-    <div class="move-cell white" [class.active]="row.whiteIndex === activeIndex">
+    <div class="move-cell white" *ngIf="!interactive" [class.active]="row.whiteIndex === activeIndex">
       {{ row.white?.san || '--' }}
     </div>
-    <div class="move-cell black" [class.active]="row.blackIndex === activeIndex">
+    <button type="button" class="move-cell white" *ngIf="interactive" [disabled]="!row.white"
+      [class.active]="row.whiteIndex === activeIndex" [attr.aria-pressed]="row.whiteIndex === activeIndex"
+      [attr.aria-label]="row.moveNumber + '. ' + (row.white?.san || '')" (click)="selectMove(row.whiteIndex)">
+      {{ row.white?.san || '--' }}
+    </button>
+    <div class="move-cell black" *ngIf="!interactive" [class.active]="row.blackIndex === activeIndex">
       {{ row.black?.san || '--' }}
     </div>
+    <button type="button" class="move-cell black" *ngIf="interactive" [disabled]="!row.black"
+      [class.active]="row.blackIndex === activeIndex" [attr.aria-pressed]="row.blackIndex === activeIndex"
+      [attr.aria-label]="row.moveNumber + '... ' + (row.black?.san || '')" (click)="selectMove(row.blackIndex)">
+      {{ row.black?.san || '--' }}
+    </button>
   </div>
 </div>

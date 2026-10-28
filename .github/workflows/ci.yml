@@ -4,7 +4,6 @@ on:
   pull_request:
     branches: [master]
   push:
-    branches: [master]
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -86,3 +85,100 @@ jobs:
       - name: Verify the Stockfish license is included in production assets
         run: test -s dist/chess-web/browser/stockfish/Copying.txt
         working-directory: chess-web
+
+  multiplayer-e2e:
+    name: Multiplayer browser smoke (Spring / PostgreSQL / Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:5432/chessdb
+      SPRING_DATASOURCE_USERNAME: chess_e2e
+      SPRING_DATASOURCE_PASSWORD: chess_e2e_only
+      JWT_SECRET: chess-e2e-only-secret-keep-out-of-production-2026
+      CHESS_ALLOWED_ORIGINS: http://localhost:4200
+      CHESS_ANALYSIS_ENABLED: 'false'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: chess_e2e
+          POSTGRES_PASSWORD: chess_e2e_only
+          POSTGRES_DB: chessdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chess_e2e -d chessdb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: chess-web/package-lock.json
+
+      - name: Pin npm to the project version
+        run: npm install --global npm@11.6.1
+
+      - name: Install frontend and browser test dependencies
+        run: npm ci
+        working-directory: chess-web
+
+      - name: Install Chromium and Linux browser dependencies
+        run: npx playwright install --with-deps chromium
+        working-directory: chess-web
+
+      - name: Build the real Spring Boot server
+        run: ./gradlew :chess-server:bootJar --no-daemon
+
+      - name: Start Spring Boot against the isolated PostgreSQL service
+        run: |
+          mkdir -p chess-web/test-results/multiplayer
+          JAR_PATH=$(find chess-server/build/libs -maxdepth 1 -name 'chess-server-*.jar' ! -name '*plain.jar' -print -quit)
+          test -n "$JAR_PATH"
+          nohup java -jar "$JAR_PATH" > chess-web/test-results/multiplayer/backend.log 2>&1 &
+          echo "$!" > chess-web/test-results/multiplayer/backend.pid
+
+          for attempt in $(seq 1 90); do
+            status=$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:8080/api/engine/health || true)
+            if [ "$status" = '200' ] || [ "$status" = '503' ]; then
+              echo "Spring Boot is accepting requests (engine health HTTP $status)."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat chess-web/test-results/multiplayer/backend.log
+          exit 1
+
+      - name: Run real-browser multiplayer critical path
+        run: npm run test:e2e:multiplayer
+        working-directory: chess-web
+
+      - name: Upload browser traces, screenshots, report, and backend log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: multiplayer-e2e-${{ github.run_id }}
+          path: |
+            chess-web/test-results/multiplayer/
+            chess-web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7

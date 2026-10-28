@@ -1108,7 +1108,7 @@ public class MultiplayerService {
     }
 
     private void sendMoveAccepted(GameEntity game, MoveDto move) {
-        EngineMoveResponseDto analysis = analysisEnabled ? analysePosition(game) : null;
+        EngineMoveResponseDto analysis = analysisForMultiplayer(game);
         MoveAcceptedEvent event = new MoveAcceptedEvent(
                 game.getId(),
                 move,
@@ -1278,7 +1278,7 @@ public class MultiplayerService {
                 game.getWhiteTimeLeftMs(),
                 game.getBlackTimeLeftMs(),
                 game.getLastMoveAt(),
-                analysisEnabled ? analysePosition(game) : null,
+                analysisForMultiplayer(game),
                 game.getVersion()
         );
         String sessionId = sessionService.getSessionId(userId);
@@ -1328,6 +1328,13 @@ public class MultiplayerService {
         );
         EngineResult result = chessEngine.analyseFen(game.getCurrentFen(), game.getSideToMove(), config);
         return AnalysisMapper.toResponse(game.getCurrentFen(), result, analysisMaxLines);
+    }
+
+    private EngineMoveResponseDto analysisForMultiplayer(GameEntity game) {
+        if (!analysisEnabled || game == null || game.getResult() == GameResult.ONGOING) {
+            return null;
+        }
+        return analysePosition(game);
     }
 
     private boolean hasActiveGame(UserEntity user) {

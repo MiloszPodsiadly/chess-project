@@ -100,7 +100,9 @@
       <span class="illustration-note">{{ illustrationLabel }}</span>
     </div>
   }
-  <figcaption class="arena-caption" role="status" aria-live="polite" aria-atomic="true">
-    <span class="status-mark" aria-hidden="true"></span>{{ statusLabel }}
-  </figcaption>
+  @if (showCaption) {
+    <figcaption class="arena-caption" role="status" aria-live="polite" aria-atomic="true">
+      <span class="status-mark" aria-hidden="true"></span>{{ statusLabel }}
+    </figcaption>
+  }
 </figure>

@@ -70,6 +70,24 @@ describe('ChessArenaAnimationComponent', () => {
     else Reflect.deleteProperty(document, 'visibilityState');
   });
 
+  it('keeps the illustration mounted without adding a caption during lobby recovery when captions are disabled', () => {
+    fixture!.componentRef.setInput('showCaption', false);
+    fixture!.detectChanges();
+    const illustration = fixture!.nativeElement.querySelector('.arena-art svg');
+    expect(illustration).not.toBeNull();
+    expect(fixture!.nativeElement.querySelector('.arena-caption')).toBeNull();
+
+    fixture!.componentRef.setInput('state', 'RECONNECTING');
+    fixture!.detectChanges();
+    expect(fixture!.nativeElement.querySelector('.arena-art svg')).toBe(illustration);
+    expect(fixture!.nativeElement.querySelector('.arena-caption')).toBeNull();
+
+    fixture!.componentRef.setInput('state', 'LOBBY');
+    fixture!.detectChanges();
+    expect(fixture!.nativeElement.querySelector('.arena-art svg')).toBe(illustration);
+    expect(fixture!.nativeElement.querySelector('.arena-caption')).toBeNull();
+  });
+
   it('renders the lobby and updates to waiting and match-found states', () => {
     const component = fixture!.componentInstance;
     const status = fixture!.nativeElement.querySelector('.arena-caption') as HTMLElement;

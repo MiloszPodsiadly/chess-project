@@ -1,21 +1,28 @@
 {
-  "runId": "MVRAXGT9",
-  "baseUrl": "http://localhost:4200",
-  "checks": {
-    "createRoomAppearsInManagement": true,
-    "hostCanDeleteRoom": true,
-    "deleteClearsManagementState": true,
-    "secondClientJoinsRoom": true,
-    "hostCanStartWhenOpponentJoins": true,
-    "bothClientsReceiveSameGame": true,
-    "playersReceiveOppositeColors": true,
-    "legalMoveSynchronizesToBothClients": true,
-    "opponentTurnOwnershipIsEnforced": true,
-    "secondLegalMoveSynchronizes": true,
-    "spectatorIsReadOnly": true,
-    "finishedGameClosesRoom": true
-  },
-  "roomCode": "4X7CFG",
-  "gameId": "8e0f15e2-6e68-49d7-b65c-bbdb2ca8d3dd",
+  "timestamp": "2026-10-28T18:05:44.767Z",
+  "runId": "51554F8B",
+  "baseUrl": "http://localhost:3001",
+  "browser": "Chromium 156.0.8078.4",
+  "roomCode": "2RWRRF",
+  "roomName": "Evening Rapid",
+  "hostName": "Milo",
+  "guestName": "Alex",
+  "spectatorName": "Sam",
+  "checks": [
+    "room creation and management",
+    "competing room joins remain serialized",
+    "room chat works in the public-room panel",
+    "legal moves synchronize",
+    "same-component mode switching and refresh restore the game",
+    "spectator remains read-only",
+    "resignation and finished-game replay"
+  ],
+  "screenshots": [
+    "lobby-public-rooms.png",
+    "lobby-room-chat.png",
+    "multiplayer-room-management.png",
+    "multiplayer-live-game.png",
+    "multiplayer-spectator.png"
+  ],
   "runtimeErrors": []
 }

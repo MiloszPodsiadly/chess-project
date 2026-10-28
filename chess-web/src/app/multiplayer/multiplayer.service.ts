@@ -30,6 +30,12 @@ import {
 type GameUpdateKind = 'MOVE_ACCEPTED' | 'GAME_ENDED' | 'GAME_STATE_SYNC';
 type GameUpdateDecision = 'APPLY' | 'DUPLICATE' | 'STALE' | 'RESYNC';
 const MAX_AUTHORITATIVE_RESYNC_REQUESTS = 3;
+const ROOM_OPERATION_TIMEOUT_MS = 15_000;
+
+export interface PendingRoomOperation {
+  kind: 'join' | 'spectate';
+  roomCode: string;
+}
 
 @Injectable({ providedIn: 'root' })
 export class MultiplayerService {
@@ -46,7 +52,7 @@ export class MultiplayerService {
   private queueSubscription: StompSubscription | null = null;
   private lobbySubscription: StompSubscription | null = null;
   private connectionUsername: string | null = null;
-  private pendingRoomJoinCode: string | null = null;
+  private roomOperationTimeout: ReturnType<typeof setTimeout> | null = null;
   private currentReconnectToken: string | null = this.readSessionValue('onlineReconnect');
   private currentRoomReconnectToken: string | null = this.readSessionValue('roomReconnectToken');
   private reconnectAttempts = 0;
@@ -59,6 +65,7 @@ export class MultiplayerService {
   private resyncGameId: string | null = null;
   private resyncAttempts = 0;
   private manualDisconnect = false;
+  private readonly pendingRoomOperationState = new BehaviorSubject<PendingRoomOperation | null>(null);
 
   readonly connected$ = new BehaviorSubject<boolean>(false);
   readonly connectionState$ = new BehaviorSubject<MultiplayerConnectionState>('DISCONNECTED');
@@ -79,6 +86,11 @@ export class MultiplayerService {
   readonly sessionUsername$ = new BehaviorSubject<string | null>(null);
   readonly sessionUserId$ = new BehaviorSubject<number | null>(null);
   readonly roomParticipants$ = new BehaviorSubject<RoomParticipantDto[]>([]);
+  readonly pendingRoomOperation$ = this.pendingRoomOperationState.asObservable();
+
+  hasPendingRoomOperation(): boolean {
+    return this.pendingRoomOperationState.value !== null;
+  }
 
   connect(username?: string) {
     if (username !== undefined) {
@@ -93,10 +105,11 @@ export class MultiplayerService {
     this.awaitingRecoverySnapshot = !!this.currentReconnectToken;
     this.connectionState$.next(this.everConnected ? 'RECONNECTING' : 'CONNECTING');
     const wsUrl = this.resolveWsUrl();
-    this.client = new Client({
+    const client = new Client({
       webSocketFactory: () => new SockJS(wsUrl),
       reconnectDelay: 2000,
       onConnect: () => {
+        if (this.client !== client) return;
         this.everConnected = true;
         this.reconnectAttempts = 0;
         this.connected$.next(true);
@@ -113,9 +126,11 @@ export class MultiplayerService {
         });
       },
       onStompError: () => {
+        if (this.client !== client) return;
         this.lastError$.next('stomp_error');
       },
       onWebSocketClose: () => {
+        if (this.client !== client) return;
         this.clearHelloAckTimeout();
         this.awaitingHelloAck = false;
         this.connected$.next(false);
@@ -141,7 +156,8 @@ export class MultiplayerService {
         this.connectionState$.next(this.everConnected ? 'RECONNECTING' : 'CONNECTING');
       }
     });
-    this.client.activate();
+    this.client = client;
+    client.activate();
   }
 
   createRoom(timeControlType: TimeControlType, options?: { name?: string; password?: string | null; isPublic?: boolean }) {
@@ -153,19 +169,14 @@ export class MultiplayerService {
     });
   }
 
-  joinRoom(roomCode: string, password?: string | null, inviteToken?: string | null) {
+  joinRoom(roomCode: string, password?: string | null, inviteToken?: string | null): boolean {
     const normalized = roomCode?.trim()?.toUpperCase();
-    if (!normalized) return;
-    const activeRoom = this.activeRoomCode$.value;
-    if (activeRoom && activeRoom !== normalized) {
-      this.lastError$.next('already_in_room');
-      return;
-    }
-    this.pendingRoomJoinCode = normalized;
-    // Subscribe before publishing joinRoom so the first participant broadcast cannot race
-    // ahead of the new client's room-topic subscription.
-    if (!activeRoom) this.subscribeRoomTopic(normalized);
-    this.send('joinRoom', { roomCode: normalized, password: password ?? null, inviteToken: inviteToken ?? null });
+    if (!normalized) return false;
+    return this.beginRoomOperation({ kind: 'join', roomCode: normalized }, 'joinRoom', {
+      roomCode: normalized,
+      password: password ?? null,
+      inviteToken: inviteToken ?? null
+    });
   }
 
   queueMatchmaking(timeControlType: TimeControlType) {
@@ -234,9 +245,12 @@ export class MultiplayerService {
     this.send('createInvite', { roomCode, maxUses, expiresInMinutes });
   }
 
-  spectateRoom(roomCode: string) {
-    this.send('spectateRoom', { roomCode });
-    this.setActiveRoom(roomCode);
+  spectateRoom(roomCode: string): boolean {
+    const normalized = roomCode?.trim()?.toUpperCase();
+    if (!normalized) return false;
+    return this.beginRoomOperation({ kind: 'spectate', roomCode: normalized }, 'spectateRoom', {
+      roomCode: normalized
+    });
   }
 
   sendRoomMessage(roomCode: string, message: string) {
@@ -264,14 +278,17 @@ export class MultiplayerService {
   }
 
   leaveRoom() {
-    const roomCode = this.activeRoomCode$.value || this.roomCode$.value;
+    const pending = this.pendingRoomOperationState.value;
+    const roomCode = this.activeRoomCode$.value || this.roomCode$.value || pending?.roomCode;
     if (roomCode) {
       this.send('leaveRoom', { roomCode });
     }
+    this.clearPendingRoomOperation();
     this.leaveGame();
   }
 
   leaveGame() {
+    this.clearPendingRoomOperation();
     this.clearMatchFound();
     if (this.queueState$.value === 'QUEUED') {
       this.cancelMatchmaking();
@@ -291,6 +308,7 @@ export class MultiplayerService {
     this.drawOffer$.next(false);
     this.activeRoomCode$.next(null);
     this.roomMessages$.next([]);
+    this.roomParticipants$.next([]);
     this.roomInvite$.next(null);
     this.opponentDisconnected$.next(false);
     this.queueState$.next('IDLE');
@@ -298,6 +316,11 @@ export class MultiplayerService {
   }
 
   disconnect() {
+    const pendingRoomOperation = this.pendingRoomOperationState.value;
+    if (pendingRoomOperation) {
+      this.send('leaveRoom', { roomCode: pendingRoomOperation.roomCode });
+    }
+    this.clearPendingRoomOperation();
     this.clearMatchFound();
     this.manualDisconnect = true;
     this.clearHelloAckTimeout();
@@ -359,22 +382,51 @@ export class MultiplayerService {
       case 'roomRecovery': {
         const credential = event.payload as RoomRecoveryCredential;
         if (credential?.roomCode && credential.reconnectToken) {
-          this.pendingRoomJoinCode = null;
-          this.setActiveRoom(credential.roomCode);
+          const normalized = credential.roomCode.trim().toUpperCase();
+          const pendingRoomOperation = this.pendingRoomOperationState.value;
+          if (pendingRoomOperation && pendingRoomOperation.roomCode !== normalized) break;
+          if (!pendingRoomOperation && this.activeRoomCode$.value !== normalized) break;
+          if (pendingRoomOperation) this.clearPendingRoomOperation(pendingRoomOperation);
+          const alreadySubscribed = this.roomSubscriptionCode === normalized && this.roomSubscription !== null;
+          if (this.activeRoomCode$.value === normalized && alreadySubscribed) {
+            this.setRoomReconnectToken(credential.reconnectToken);
+            break;
+          }
+          if (this.activeRoomCode$.value === normalized) {
+            this.subscribeRoomTopic(normalized);
+            this.roomHistory(normalized);
+            this.roomParticipants(normalized);
+          } else {
+            this.setActiveRoom(normalized);
+          }
           this.setRoomReconnectToken(credential.reconnectToken);
-          this.roomHistory(credential.roomCode);
-          this.roomParticipants(credential.roomCode);
         }
         break;
       }
       case 'roomJoinFailed': {
-        const pendingRoom = this.pendingRoomJoinCode;
-        if (pendingRoom && this.activeRoomCode$.value !== pendingRoom
-            && this.roomSubscriptionCode === pendingRoom) {
+        const pendingRoomOperation = this.pendingRoomOperationState.value;
+        if (pendingRoomOperation?.kind === 'join'
+            && this.activeRoomCode$.value !== pendingRoomOperation.roomCode
+            && this.roomSubscriptionCode === pendingRoomOperation.roomCode) {
           this.unsubscribeRoomTopic();
         }
-        this.pendingRoomJoinCode = null;
+        if (pendingRoomOperation?.kind === 'join') {
+          this.clearPendingRoomOperation(pendingRoomOperation);
+        }
         this.lastError$.next(String(event.payload ?? 'room_join_failed'));
+        break;
+      }
+      case 'roomSpectateFailed': {
+        const pendingRoomOperation = this.pendingRoomOperationState.value;
+        if (pendingRoomOperation?.kind === 'spectate'
+            && this.activeRoomCode$.value !== pendingRoomOperation.roomCode
+            && this.roomSubscriptionCode === pendingRoomOperation.roomCode) {
+          this.unsubscribeRoomTopic();
+        }
+        if (pendingRoomOperation?.kind === 'spectate') {
+          this.clearPendingRoomOperation(pendingRoomOperation);
+        }
+        this.lastError$.next(String(event.payload ?? 'room_spectate_failed'));
         break;
       }
       case 'helloAck':
@@ -409,6 +461,7 @@ export class MultiplayerService {
         break;
       case 'helloFailed':
         this.clearHelloAckTimeout();
+        this.clearPendingRoomOperation();
         this.awaitingHelloAck = false;
         this.ready$.next(false);
         this.connectionState$.next('ERROR');
@@ -478,9 +531,6 @@ export class MultiplayerService {
       }
       case 'roomInviteFailed':
         this.lastError$.next(String(event.payload ?? 'room_invite_failed'));
-        break;
-      case 'roomSpectateFailed':
-        this.lastError$.next(String(event.payload ?? 'room_spectate_failed'));
         break;
       case 'roomKickFailed':
         this.lastError$.next(String(event.payload ?? 'room_kick_failed'));
@@ -713,7 +763,8 @@ export class MultiplayerService {
       this.clearActiveRoom();
     }
     this.timeControl$.next(state.timeControlType ?? this.timeControl$.value);
-    if (snapshotDecision === 'APPLY') {
+    const shouldReapplyRecoveredSnapshot = snapshotDecision === 'DUPLICATE' && this.awaitingRecoverySnapshot;
+    if (snapshotDecision === 'APPLY' || shouldReapplyRecoveredSnapshot) {
       this.gameState$.next(state);
     }
     this.resetAuthoritativeResync(state.gameId);
@@ -904,7 +955,21 @@ export class MultiplayerService {
       : null;
     const roomCode = typeof payload === 'string' ? payload : details?.roomCode;
     const activeRoom = this.activeRoomCode$.value || this.roomCode$.value;
-    if (!roomCode || roomCode.trim().toUpperCase() !== activeRoom?.trim().toUpperCase()) return;
+    if (!roomCode) return;
+    const normalizedRoomCode = roomCode.trim().toUpperCase();
+    const activeRoomCode = activeRoom?.trim().toUpperCase();
+    const pending = this.pendingRoomOperationState.value;
+    if (pending?.roomCode === normalizedRoomCode && normalizedRoomCode !== activeRoomCode) {
+      this.clearPendingRoomOperation(pending);
+      if (eventName === 'roomKicked') this.lastError$.next('roomKicked');
+      else if (eventName === 'roomDeleted') this.lastError$.next('roomDeleted');
+      else {
+        const reasonKey = details?.closeReason ? String(details.closeReason).toLowerCase() : '';
+        this.lastError$.next(reasonKey ? `room_closed_${reasonKey}` : 'roomClosed');
+      }
+      return;
+    }
+    if (normalizedRoomCode !== activeRoomCode) return;
 
     const lifecycleType = details?.type ?? details?.memberEvent ?? eventName;
     const lifecycleAt = details?.occurredAt ?? details?.lifecycleAt ?? '';
@@ -936,18 +1001,60 @@ export class MultiplayerService {
     this.roomMessages$.next([...current, message].slice(-100));
   }
 
-  private send(destination: string, payload: unknown) {
+  private beginRoomOperation(operation: PendingRoomOperation, destination: string, payload: unknown): boolean {
+    if (this.pendingRoomOperationState.value) {
+      this.lastError$.next('room_operation_pending');
+      return false;
+    }
+    if (this.activeRoomCode$.value) {
+      this.lastError$.next('already_in_room');
+      return false;
+    }
+
+    this.lastError$.next(null);
+    this.pendingRoomOperationState.next(operation);
+    if (this.send(destination, payload) === false) {
+      this.clearPendingRoomOperation(operation);
+      this.lastError$.next('connection_not_ready');
+      return false;
+    }
+    this.roomOperationTimeout = setTimeout(() => {
+      if (this.pendingRoomOperationState.value !== operation) return;
+      this.send('leaveRoom', { roomCode: operation.roomCode });
+      this.clearPendingRoomOperation(operation);
+      this.lastError$.next('room_operation_timeout');
+    }, ROOM_OPERATION_TIMEOUT_MS);
+    return true;
+  }
+
+  private clearPendingRoomOperation(expected?: PendingRoomOperation) {
+    const pending = this.pendingRoomOperationState.value;
+    if (!pending || (expected && pending !== expected)) return;
+    if (this.roomOperationTimeout !== null) {
+      clearTimeout(this.roomOperationTimeout);
+      this.roomOperationTimeout = null;
+    }
+    if (this.lastError$.value === 'room_operation_pending') this.lastError$.next(null);
+    this.pendingRoomOperationState.next(null);
+  }
+
+  private send(destination: string, payload: unknown): boolean {
     if (!this.client || !this.client.connected) {
-      return;
+      return false;
     }
     if (destination !== 'hello/auth' && destination !== 'requestSync'
         && destination !== 'ackReconnect' && !this.ready$.value) {
-      return;
+      return false;
     }
-    this.client.publish({
-      destination: `/app/${destination}`,
-      body: JSON.stringify(payload)
-    });
+    try {
+      this.client.publish({
+        destination: `/app/${destination}`,
+        body: JSON.stringify(payload)
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private resolveWsUrl() {
@@ -1004,6 +1111,7 @@ export class MultiplayerService {
 
   private clearActiveRoom() {
     this.unsubscribeRoomTopic();
+    this.clearPendingRoomOperation();
     this.setRoomReconnectToken(null);
     this.writeSessionValue('roomRecoveryRoomCode', null);
     this.activeRoomCode$.next(null);
@@ -1108,6 +1216,7 @@ export class MultiplayerService {
 
   private stopAfterAuthenticationFailure() {
     this.clearHelloAckTimeout();
+    this.clearPendingRoomOperation();
     const failedClient = this.client;
     if (!failedClient) {
       return;
