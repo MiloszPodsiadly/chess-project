@@ -18,19 +18,19 @@
           <app-board
             *ngIf="(state.fen$ | async) as fen"
             [class.online-board]="onlineMode"
-            [fen]="fen"
+            [fen]="boardFen(fen)"
             [selected]="state.selectedSquare$ | async"
-            [legalMoves]="(state.legalMoves$ | async) || []"
-            [lastMove]="state.lastMove$ | async"
-            [checkedKingSquare]="state.checkedKingSquare$ | async"
-            [checkmate]="(state.positionStatus$ | async) === 'CHECKMATE'"
+            [legalMoves]="isReviewingMultiplayerGame() ? [] : ((state.legalMoves$ | async) || [])"
+            [lastMove]="boardLastMove((state.lastMove$ | async) || null)"
+            [checkedKingSquare]="boardCheckedKingSquare((state.checkedKingSquare$ | async) || null)"
+            [checkmate]="boardPositionStatus((state.positionStatus$ | async) || 'NORMAL') === 'CHECKMATE'"
             [checkLabel]="t('checkAlert')"
             [checkmateLabel]="t('checkmateAlert')"
             [orientation]="boardOrientation()"
             (squareClick)="onSquareClick($event)"
           />
         </div>
-        <div class="position-alert" role="status" aria-live="polite" *ngIf="(state.positionStatus$ | async) as positionStatus">
+        <div class="position-alert" role="status" aria-live="polite" *ngIf="boardPositionStatus((state.positionStatus$ | async) || 'NORMAL') as positionStatus">
           <span *ngIf="positionStatus === 'CHECK'">{{ t('checkAlert') }}</span>
           <span *ngIf="positionStatus === 'CHECKMATE'">{{ t('checkmateAlert') }}</span>
         </div>
@@ -267,7 +267,14 @@
             <div class="card-subtitle">{{ t('moveCount') }}: {{ multiplayerHistoryMoves.length }}</div>
           </div>
         </div>
-        <app-move-history [moves]="multiplayerHistoryMoves" />
+        <p role="alert" *ngIf="multiplayerReplayError">{{ t('replayUnavailable') }}</p>
+        <app-move-history
+          *ngIf="!multiplayerReplayError && multiplayerReplay"
+          [moves]="multiplayerReplay.moves"
+          [interactive]="true"
+          [positionIndex]="multiplayerReplay.positionIndex"
+          [navigationLabels]="multiplayerReplayNavigationLabels()"
+          (positionIndexChange)="setMultiplayerReplayPosition($event)" />
       </div>
 
       <div class="info-card room-preview" *ngIf="onlineMode && hasActiveRoom()" role="region" aria-labelledby="room-chat-title">

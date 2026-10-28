@@ -2,6 +2,7 @@ import { Component, DestroyRef, ChangeDetectorRef } from '@angular/core';
 import { AsyncPipe, NgForOf, NgIf, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { GameStateService, type MoveView } from './game-state.service';
+import { MultiplayerReplayState, type ReplayPosition } from './multiplayer-replay-state';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { EngineAnalysisService } from '../analysis/engine-analysis.service';
@@ -103,6 +104,8 @@ export class GamePageComponent {
   pendingServerMove = false;
   multiplayerHistoryMoves: MoveView[] = [];
   multiplayerReviewedGameId: string | null = null;
+  multiplayerReplay: MultiplayerReplayState | null = null;
+  multiplayerReplayError = false;
   displayWhiteMs: number | null = null;
   displayBlackMs: number | null = null;
   clockTimer: number | null = null;
@@ -180,6 +183,22 @@ export class GamePageComponent {
       recoveryFailed: 'Recovery failed. Reconnect or return to the lobby.',
       gameInProgress: 'Game in progress',
       onlineActionFailed: 'Multiplayer action failed. Please try again.',
+      roomNotFoundError: 'Room not found.',
+      wrongRoomPasswordError: 'Incorrect room password.',
+      roomFullError: 'This room is full.',
+      activeGameError: 'You are already in an active game.',
+      roomJoinFailedError: 'Unable to join room.',
+      alreadyInRoomError: 'You are already in another room.',
+      hostCannotJoinError: 'You host this room and cannot join it.',
+      roomCreateFailedError: 'Unable to create room.',
+      matchmakingUnavailableError: 'Matchmaking is unavailable.',
+      roomInviteFailedError: 'Unable to create an invite.',
+      roomKickFailedError: 'Unable to remove that participant.',
+      roomDeleteFailedError: 'Unable to delete room.',
+      roomStartFailedError: 'Unable to start the game.',
+      roomInGameError: 'A game is already in progress in this room.',
+      drawOfferLimitError: 'The draw offer limit has been reached.',
+      roomSpectateFailedError: 'Unable to spectate this room.',
       reconnectAckTimeout: 'The server did not confirm the reconnect. Retrying stopped; reconnect to restore the game.',
       invalidGameSnapshot: 'The recovered board could not be verified. Keeping the current board while requesting a fresh snapshot.',
       stateConflict: 'Game updates did not match. Checking the state with the server.',
@@ -229,7 +248,9 @@ export class GamePageComponent {
       joinPasswordPlaceholder: 'password',
       statusLabel: 'Status:',
       moveHistory: 'Move history',
-      moveCount: 'Moves',
+      moveCount: 'Moves', replayNavigation: 'Replay moves', replayFirst: 'First',
+      replayPrevious: 'Previous', replayNext: 'Next', replayLast: 'Last',
+      replayUnavailable: 'Replay is unavailable because the move history could not be verified.',
       moveWhiteLabel: 'White',
       moveBlackLabel: 'Black',
       promotionTitle: 'Choose promotion',
@@ -302,6 +323,22 @@ export class GamePageComponent {
       recoveryFailed: 'Nie udalo sie odzyskac partii. Polacz sie ponownie lub wroc do lobby.',
       gameInProgress: 'Partia trwa',
       onlineActionFailed: 'Nie udalo sie wykonac akcji multiplayer. Sprobuj ponownie.',
+      roomNotFoundError: 'Nie znaleziono pokoju.',
+      wrongRoomPasswordError: 'Nieprawidłowe hasło do pokoju.',
+      roomFullError: 'Pokój jest pełny.',
+      activeGameError: 'Masz już aktywną partię.',
+      roomJoinFailedError: 'Nie udało się dołączyć do pokoju.',
+      alreadyInRoomError: 'Jesteś już w innym pokoju.',
+      hostCannotJoinError: 'Jesteś gospodarzem tego pokoju i nie możesz do niego dołączyć.',
+      roomCreateFailedError: 'Nie udało się utworzyć pokoju.',
+      matchmakingUnavailableError: 'Nie udało się znaleźć przeciwnika.',
+      roomInviteFailedError: 'Nie udało się utworzyć zaproszenia.',
+      roomKickFailedError: 'Nie udało się usunąć uczestnika.',
+      roomDeleteFailedError: 'Nie udało się usunąć pokoju.',
+      roomStartFailedError: 'Nie udało się rozpocząć partii.',
+      roomInGameError: 'W tym pokoju trwa już partia.',
+      drawOfferLimitError: 'Osiągnięto limit propozycji remisu.',
+      roomSpectateFailedError: 'Nie udało się dołączyć do pokoju jako widz.',
       reconnectAckTimeout: 'Serwer nie potwierdzil ponownego polaczenia. Ponawianie zatrzymano; polacz sie ponownie, aby przywrocic partie.',
       invalidGameSnapshot: 'Nie mozna zweryfikowac odzyskanej planszy. Zachowano obecna plansze i poproszono o nowy stan.',
       stateConflict: 'Aktualizacje partii sa niespojne. Sprawdzam stan na serwerze.',
@@ -351,7 +388,9 @@ export class GamePageComponent {
       joinPasswordPlaceholder: 'haslo',
       statusLabel: 'Status:',
       moveHistory: 'Historia ruchow',
-      moveCount: 'Ruchy',
+      moveCount: 'Ruchy', replayNavigation: 'Nawigacja po partii', replayFirst: 'Początek',
+      replayPrevious: 'Poprzedni', replayNext: 'Następny', replayLast: 'Koniec',
+      replayUnavailable: 'Nie można odtworzyć partii, ponieważ historia ruchów nie przeszła weryfikacji.',
       moveWhiteLabel: 'Biale',
       moveBlackLabel: 'Czarne',
       promotionTitle: 'Wybierz promocje',
@@ -422,8 +461,17 @@ export class GamePageComponent {
         if (!game) {
           this.pendingServerMove = false;
           this.multiplayerHistoryMoves = [];
+          this.multiplayerReviewedGameId = null;
+          this.multiplayerReplay = null;
+          this.multiplayerReplayError = false;
           return;
         }
+        if (this.multiplayerReviewedGameId && this.multiplayerReviewedGameId !== game.gameId) {
+          this.multiplayerReviewedGameId = null;
+          this.multiplayerReplay = null;
+          this.multiplayerReplayError = false;
+        }
+        this.multiplayerHistoryMoves = [];
         try {
           this.multiplayerHistoryMoves = this.state.loadExternalState(game.fen, game.moves,
             game.sideToMove === 'WHITE' ? 'w' : 'b');
@@ -433,12 +481,7 @@ export class GamePageComponent {
         }
         this.pendingPromotion = null;
         this.pendingServerMove = false;
-        if (game.analysis) {
-          this.analysis.applyExternalAnalysis(game.analysis, game.fen);
-        } else {
-          this.analysis.useLocalAnalysis();
-          this.analysis.scheduleAnalyze(game.fen);
-        }
+        this.clearMultiplayerAnalysis();
       });
 
     this.multiplayer.ready$
@@ -1163,6 +1206,12 @@ export class GamePageComponent {
     return this.onlineMode && !!this.multiplayer.gameState$.value?.gameId;
   }
 
+  private clearMultiplayerAnalysis() {
+    // Multiplayer game state is server-authoritative; never expose live engine hints to players or spectators.
+    this.analysis.useLocalAnalysis();
+    this.evalHistory = [];
+  }
+
   hasActiveRoom() {
     return !!this.multiplayer.activeRoomCode$.value;
   }
@@ -1191,10 +1240,58 @@ export class GamePageComponent {
   }
 
   reviewMultiplayerGame(outcome: GameOutcome) {
+    const game = this.multiplayer.gameState$.value;
+    if (!game || game.gameId !== outcome.gameId || game.result === 'ONGOING') return;
     this.multiplayerReviewedGameId = outcome.gameId;
+    this.multiplayerReplayError = false;
+    try {
+      this.multiplayerReplay = new MultiplayerReplayState(
+        game.fen, game.moves, game.sideToMove === 'WHITE' ? 'w' : 'b');
+      this.multiplayerHistoryMoves = this.multiplayerReplay.moves;
+    } catch {
+      this.multiplayerReplay = null;
+      this.multiplayerReplayError = true;
+      this.multiplayerHistoryMoves = [];
+    }
     if (typeof document !== 'undefined') {
       window.setTimeout(() => document.getElementById('multiplayer-review-history')?.focus(), 0);
     }
+  }
+
+  setMultiplayerReplayPosition(positionIndex: number) {
+    this.multiplayerReplay?.seek(positionIndex);
+  }
+
+  multiplayerReplayNavigationLabels() {
+    return {
+      group: this.t('replayNavigation'),
+      first: this.t('replayFirst'),
+      previous: this.t('replayPrevious'),
+      next: this.t('replayNext'),
+      last: this.t('replayLast')
+    };
+  }
+
+  boardFen(authoritativeFen: string) {
+    return this.currentMultiplayerReplayPosition()?.fen ?? authoritativeFen;
+  }
+
+  boardLastMove(authoritativeMove: MoveView | null) {
+    const replayPosition = this.currentMultiplayerReplayPosition();
+    return replayPosition ? replayPosition.lastMove : authoritativeMove;
+  }
+
+  boardPositionStatus(authoritativeStatus: string) {
+    return this.currentMultiplayerReplayPosition()?.status ?? authoritativeStatus;
+  }
+
+  boardCheckedKingSquare(authoritativeSquare: string | null) {
+    const replayPosition = this.currentMultiplayerReplayPosition();
+    return replayPosition ? replayPosition.checkedKingSquare : authoritativeSquare;
+  }
+
+  private currentMultiplayerReplayPosition(): ReplayPosition | null {
+    return this.isReviewingMultiplayerGame() ? this.multiplayerReplay?.currentPosition ?? null : null;
   }
 
   isReviewingMultiplayerGame() {

@@ -15,6 +15,10 @@ function page() {
   component.botColor = 'b';
   component.botElo = 1200;
   component.serverGame = null;
+  component.multiplayerHistoryMoves = [];
+  component.multiplayerReviewedGameId = null;
+  component.multiplayerReplay = null;
+  component.multiplayerReplayError = false;
   (component as any).state = {
     sideToMove$: { value: 'w' }, fen$: { value: 'start' }, selectedSquare$,
     positionStatus$: { value: 'NORMAL' },
@@ -24,7 +28,10 @@ function page() {
     attemptMove: vi.fn().mockReturnValue(true)
   };
   (component as any).botEngine = { stop: vi.fn() };
-  (component as any).analysis = { stop: vi.fn(), enabled$: { next: vi.fn() }, scheduleAnalyze: vi.fn() };
+  (component as any).analysis = {
+    stop: vi.fn(), useLocalAnalysis: vi.fn(), applyExternalAnalysis: vi.fn(),
+    enabled$: { next: vi.fn() }, scheduleAnalyze: vi.fn()
+  };
   (component as any).cdr = { markForCheck: vi.fn() };
   (component as any).multiplayer = {
     connected$: { value: false }, connectionState$: { value: 'READY' },
@@ -105,6 +112,18 @@ describe('bot board and color regression', () => {
 
     (component as any).multiplayer.connectionState$.value = 'RECONNECTING';
     expect(component.canHumanMove()).toBe(false);
+  });
+
+  it('clears analysis and never starts or applies engine hints for multiplayer state', () => {
+    const component = page();
+    component.evalHistory = [0.3, -0.2];
+
+    (component as any).clearMultiplayerAnalysis();
+
+    expect((component as any).analysis.useLocalAnalysis).toHaveBeenCalledOnce();
+    expect((component as any).analysis.scheduleAnalyze).not.toHaveBeenCalled();
+    expect((component as any).analysis.applyExternalAnalysis).not.toHaveBeenCalled();
+    expect(component.evalHistory).toEqual([]);
   });
 
   it('blocks spectators and players who are not on move before selecting a square', () => {
@@ -277,7 +296,7 @@ describe('bot board and color regression', () => {
     component.botMode = false;
     component.onlineMode = true;
     const finalGame = {
-      gameId: 'finished', fen: 'start', sideToMove: 'WHITE', result: 'WHITE_WIN',
+      gameId: 'finished', fen: new Chess().fen(), sideToMove: 'WHITE', result: 'WHITE_WIN',
       endReason: 'RESIGNATION', moves: [], whiteTimeLeftMs: 0, blackTimeLeftMs: 0, version: 9
     } as any;
     (component as any).multiplayer.gameState$.value = finalGame;
@@ -290,5 +309,40 @@ describe('bot board and color regression', () => {
     expect(component.isReviewingMultiplayerGame()).toBe(true);
     (component as any).multiplayer.gameState$.value = { ...finalGame, gameId: 'next-game' };
     expect(component.isReviewingMultiplayerGame()).toBe(false);
+  });
+
+  it('replays a completed multiplayer board without changing its authoritative state', () => {
+    const component = page();
+    component.botMode = false;
+    component.onlineMode = true;
+    const chess = new Chess();
+    for (const san of ['e4', 'e5']) chess.move(san);
+    const moves = chess.history({ verbose: true }).map(move => ({
+      from: move.from, to: move.to, promotion: move.promotion
+    }));
+    const game = {
+      gameId: 'finished', fen: chess.fen(), sideToMove: 'WHITE', result: 'DRAW',
+      endReason: 'AGREEMENT', moves, whiteTimeLeftMs: 0, blackTimeLeftMs: 0, version: 10
+    } as any;
+    (component as any).multiplayer.gameState$.value = game;
+    (component as any).state.fen$.value = game.fen;
+
+    component.reviewMultiplayerGame(component.multiplayerOutcome()!);
+    const authoritativeFen = (component as any).multiplayer.gameState$.value.fen;
+    expect(component.multiplayerReplay?.positionIndex).toBe(2);
+
+    component.setMultiplayerReplayPosition(0);
+    expect(component.boardFen(authoritativeFen)).toBe(new Chess().fen());
+    expect(component.boardLastMove({ san: 'e5', from: 'e7', to: 'e5' })).toBeNull();
+    expect((component as any).multiplayer.gameState$.value.fen).toBe(authoritativeFen);
+
+    component.setMultiplayerReplayPosition(1);
+    const afterWhiteMove = new Chess();
+    afterWhiteMove.move('e4');
+    expect(component.boardFen(authoritativeFen)).toBe(afterWhiteMove.fen());
+    expect(component.boardLastMove(null)?.san).toBe('e4');
+    component.setMultiplayerReplayPosition(2);
+    expect(component.boardFen(authoritativeFen)).toBe(authoritativeFen);
+    expect(component.multiplayerReplay?.activeMoveIndex).toBe(1);
   });
 });
