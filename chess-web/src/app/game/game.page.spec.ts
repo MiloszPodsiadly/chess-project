@@ -78,27 +78,6 @@ describe('bot board and color regression', () => {
     expect(component.chessArenaState()).toBe('RECONNECTING');
   });
 
-  it('explains that an unverifiable recovered snapshot leaves the current board untouched', () => {
-    const component = page();
-    (component as any).translations = {
-      en: { snapshotRecoveryFailed: 'Your current board was kept.' },
-      pl: { snapshotRecoveryFailed: 'Zachowano obecna plansze.' }
-    };
-    component.lang = 'en';
-    expect(component.onlineErrorMessage('snapshot_recovery_failed'))
-      .toContain('Your current board was kept');
-  });
-
-  it('localizes multiplayer recovery errors using the selected language', () => {
-    const component = page();
-    (component as any).translations = {
-      en: { snapshotRecoveryFailed: 'Your current board was kept.' },
-      pl: { snapshotRecoveryFailed: 'Zachowano obecna plansze.' }
-    };
-    component.lang = 'pl';
-    expect(component.onlineErrorMessage('snapshot_recovery_failed')).toBe('Zachowano obecna plansze.');
-  });
-
   it('keeps the board unobscured while the bot thinks and blocks human moves', () => {
     const component = page();
     component.botThinking = true;
@@ -192,16 +171,6 @@ describe('bot board and color regression', () => {
     expect(component.pendingServerMove).toBe(false);
     expect(component.pendingPromotion).toBeNull();
     expect((component as any).state.selectedSquare$.value).toBeNull();
-  });
-
-  it('reconstructs readable SAN notation for multiplayer review history', () => {
-    const component = page();
-    const history = (component as any).buildMultiplayerHistory({ moves: [
-      { from: 'e2', to: 'e4' }, { from: 'e7', to: 'e5' },
-      { from: 'g1', to: 'f3' }, { from: 'b8', to: 'c6' }
-    ] });
-
-    expect(history.map((move: { san: string }) => move.san)).toEqual(['e4', 'e5', 'Nf3', 'Nc6']);
   });
 
   it('reports turn, check, reconnect, disconnect, and terminal multiplayer status', () => {

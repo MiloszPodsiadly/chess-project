@@ -11,14 +11,15 @@ import { GameControlsComponent } from './game-controls/game-controls.component';
 import { AnalysisPanelComponent } from '../analysis/analysis-panel.component';
 import { BotEngineService } from '../bot/bot-engine.service';
 import { EngineGameApiService, EngineSessionExpiredError, ServerEngineGame, ServerEngineMode, StrengthPreset } from '../bot/engine-game-api.service';
-import { Chess, type Square } from 'chess.js';
+import { Chess } from 'chess.js';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import type { GameStateSyncDto, TimeControlType } from '../multiplayer/models';
+import type { TimeControlType } from '../multiplayer/models';
 import { strengthCategory } from '../bot/strength-catalog';
 import { GameOutcome, multiplayerOutcome as toMultiplayerOutcome, serverOutcome } from './game-outcome';
 import { GameResultPanelComponent } from './game-result-panel/game-result-panel.component';
 import { BotSetupComponent } from './bot-setup/bot-setup.component';
 import { ChessArenaAnimationComponent, ChessArenaState } from './chess-arena-animation/chess-arena-animation.component';
+import { LobbyCreateRoomRequest, LobbyJoinRoomRequest, MultiplayerLobbyComponent } from './multiplayer-lobby/multiplayer-lobby.component';
 
 type PieceCode = string | null;
 type BotErrorScope = 'authentication' | 'configuration' | 'engine' | 'gameplay' | 'recovery';
@@ -26,7 +27,7 @@ type BotErrorScope = 'authentication' | 'configuration' | 'engine' | 'gameplay' 
 @Component({
   selector: 'app-game-page',
   standalone: true,
-  imports: [AsyncPipe, NgIf, NgForOf, DatePipe, FormsModule, RouterLink, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent, GameResultPanelComponent, BotSetupComponent, ChessArenaAnimationComponent],
+  imports: [AsyncPipe, NgIf, NgForOf, DatePipe, FormsModule, RouterLink, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent, GameResultPanelComponent, BotSetupComponent, MultiplayerLobbyComponent, ChessArenaAnimationComponent],
   templateUrl: './game.page.html',
   styleUrl: './game.page.css'
 })
@@ -95,17 +96,9 @@ export class GamePageComponent {
   analysisEnabled = true;
   evalHistory: number[] = [];
   onlineMode = false;
-  onlineRoomName = '';
-  onlineRoomPassword = '';
-  onlineJoinPassword = '';
-  onlinePublicRoom = true;
   chatMessage = '';
-  onlineView: 'public' | 'create' | 'join' | 'manage' = 'public';
   private pendingOnlineAction: (() => void) | null = null;
-  showOnlineSetup = false;
   onlineUsername = '';
-  onlineTimeControl: TimeControlType = 'RAPID';
-  onlineRoomCode = '';
   lang: 'en' | 'pl' = 'en';
   pendingServerMove = false;
   multiplayerHistoryMoves: MoveView[] = [];
@@ -114,8 +107,6 @@ export class GamePageComponent {
   displayBlackMs: number | null = null;
   clockTimer: number | null = null;
   private onlineAutoConnected = false;
-  sessionUsername: string | null = null;
-  sessionUserId: number | null = null;
   private destroyed = false;
   private readonly onStorageChange = (event: StorageEvent) => {
     if (event.key === 'lang') this.syncLangFromStorage();
@@ -147,12 +138,9 @@ export class GamePageComponent {
       quickStart: 'Quick start',
       playingAs: 'Playing as',
       arenaPreview: 'Arena preview',
-      connectFirst: 'Connect first',
-      refresh: 'Refresh',
       host: 'Host',
       noPublicRooms: 'No public rooms yet.',
       spectate: 'Spectate',
-      invite: 'Invite',
       inviteCreated: 'Room created',
       deleteRoom: 'Delete room',
       startGame: 'Start game',
@@ -165,16 +153,12 @@ export class GamePageComponent {
       roomPublic: 'Public',
       roomPrivate: 'Private',
       removePlayer: 'Remove',
-      inviteExpires: 'Expires',
-      inviteUses: 'Uses',
       chatTitle: 'Room chat',
       chatEmpty: 'No messages yet. Start the conversation.',
       chatPlaceholder: 'Type a message...',
       send: 'Send',
       spectator: 'Spectator',
       matchControls: 'Match controls',
-      leaveLobby: 'Leave to lobby',
-      backToLobby: 'Back to lobby',
       resign: 'Resign',
       offerDraw: 'Offer draw',
       acceptDraw: 'Accept draw',
@@ -183,21 +167,9 @@ export class GamePageComponent {
       drawOfferSubtitle: 'Accept or decline to continue.',
       gameOver: 'Game over',
       gameFinished: 'Game finished',
+      endResign: 'Resignation',
       yourTurn: 'Your turn',
       opponentTurn: "Opponent's turn",
-      resultWin: 'You win',
-      resultLoss: 'You lose',
-      resultDraw: 'Draw',
-      endCheckmate: 'Checkmate',
-      endResign: 'Resignation',
-      endTimeout: 'Time out',
-      endDisconnectTimeout: 'Game ended after the opponent did not reconnect in time',
-      endStalemate: 'Stalemate',
-      endAgreement: 'Agreed draw',
-      endRepetition: 'Threefold repetition',
-      endFifty: 'Fifty-move rule',
-      endInsufficient: 'Insufficient material',
-      connect: 'Connect',
       connected: 'Connected',
       disconnected: 'Disconnected',
       connecting: 'Connecting to server...',
@@ -228,70 +200,26 @@ export class GamePageComponent {
       alreadyQueued: 'You are already in the matchmaking queue.',
       createRoom: 'Create room',
       joinRoom: 'Join room',
-      matchmaking: 'Matchmaking',
-      skip: 'Skip',
-      botSetup: 'Bot setup',
-      botSetupSubtitle: 'Configure strength, color, and analysis',
-      engineLocation: 'Engine location', browserFast: 'Browser · fast local play',
-      nativeServer: 'Native · server Stockfish 19', browserFlavor: 'Browser engine',
       browserTradeoff: 'Fast local moves; speed and strength depend on your device.',
       nativeTradeoff: 'Server play with configurable thinking time. Sign in to save games.',
-      firstLoadNote: 'The first engine download can take longer. Later moves reuse the worker.',
-      difficulty: 'Difficulty', difficultyNote: 'These ranges are intended settings, not measured FIDE ratings.',
-      rookie: 'Rookie', beginner: 'Beginner', casual: 'Casual', intermediate: 'Intermediate',
-      advanced: 'Advanced', expert: 'Expert', master: 'Master', maximum: 'Maximum',
       unrestricted: 'Unrestricted Stockfish 19', customLevel: 'Custom level (200–3190)',
-      account: 'Account', accountName: 'Username', email: 'Email', password: 'Password',
-      authRequired: 'Enter username and password; email is also required to register.',
       sessionExpired: 'Your server session expired. Sign in again.',
       analysisTab: 'Analysis', movesTab: 'Moves', settingsTab: 'Settings',
       nativeEngine: 'Stockfish 19 Native',
-      browserEngine: 'Stockfish.js 19 (guest)',
-      guestDescription: 'Play locally without an account. Games are not saved on the server.',
-      serverDescription: 'Sign in to save games against native Stockfish 19.',
-      signIn: 'Sign in',
-      register: 'Register',
-      signedIn: 'Signed in for server play',
-      strengthMode: 'Strength mode',
-      beginnerMode: 'Beginner · uncalibrated',
-      trainingMode: 'Training · approximate Stockfish Elo',
-      challengeMode: 'Challenge · full strength',
-      searchBudget: 'Search budget',
       localAnalysisEngine: 'Local analysis engine',
       engineLoading: 'Loading local engine…',
       engineRetry: 'Retry engine turn',
-      localLevel: 'local level',
-      botMode: 'Bot mode',
-      botColor: 'Bot color',
-      botElo: 'Bot Elo',
-      botPlayAs: 'Play as',
-      botRandom: 'Random',
-      botSkill: 'Skill',
-      botProfile: 'Bot profile',
-      botDepth: 'Depth cap',
-      botMoveTime: 'Move time',
-      botBlunder: 'Blunder rate',
       restartGame: 'Restart',
       exitGame: 'Exit',
       botLabel: 'Bot',
       botGameTitle: 'Bot game',
-      preStartTitle: 'Ready to play?',
-      preStartSubtitle: 'Pick your bot settings and start the game.',
       white: 'White',
       black: 'Black',
-      youWonTitle: 'You won!',
-      botWonTitle: 'Bot won!',
-      resultSubtitle: 'Play again or adjust the bot settings.',
-      hints: 'Hints',
       autoAnalysis: 'Auto analysis',
       startVsBot: 'Start vs Bot',
       botThinking: 'Bot thinking...',
       botReady: 'Ready',
-      online: 'Online',
-      offline: 'Offline',
       room: 'Room',
-      token: 'Token',
-      opponent: 'Opponent',
       you: 'You',
       guest: 'guest',
       guestPlaceholder: 'guest',
@@ -304,10 +232,6 @@ export class GamePageComponent {
       moveCount: 'Moves',
       moveWhiteLabel: 'White',
       moveBlackLabel: 'Black',
-      serverAnalysis: 'Server analysis',
-      localAnalysis: 'Local analysis',
-      hideHints: 'Hide hints',
-      showHints: 'Show hints',
       promotionTitle: 'Choose promotion',
       cancel: 'Cancel'
     },
@@ -336,12 +260,9 @@ export class GamePageComponent {
       quickStart: 'Szybki start',
       playingAs: 'Grasz jako',
       arenaPreview: 'Podglad Areny',
-      connectFirst: 'Najpierw polacz',
-      refresh: 'Odswiez',
       host: 'Gospodarz',
       noPublicRooms: 'Brak publicznych pokoi.',
       spectate: 'Ogladaj',
-      invite: 'Zapros',
       inviteCreated: 'Pokoj utworzony',
       deleteRoom: 'Usun pokoj',
       startGame: 'Startuj gre',
@@ -354,16 +275,12 @@ export class GamePageComponent {
       roomPublic: 'Publiczny',
       roomPrivate: 'Prywatny',
       removePlayer: 'Usun',
-      inviteExpires: 'Wazne do',
-      inviteUses: 'Uzycia',
       chatTitle: 'Czat pokoju',
       chatEmpty: 'Brak wiadomosci. Rozpocznij rozmowe.',
       chatPlaceholder: 'Napisz wiadomosc...',
       send: 'Wyslij',
       spectator: 'Widz',
       matchControls: 'Sterowanie gra',
-      leaveLobby: 'Wroc do lobby',
-      backToLobby: 'Wroc do lobby',
       resign: 'Poddaj',
       offerDraw: 'Zaproponuj remis',
       acceptDraw: 'Akceptuj remis',
@@ -372,21 +289,9 @@ export class GamePageComponent {
       drawOfferSubtitle: 'Akceptuj lub odrzuc.',
       gameOver: 'Koniec gry',
       gameFinished: 'Partia zakonczona',
+      endResign: 'Poddanie',
       yourTurn: 'Twoj ruch',
       opponentTurn: 'Ruch przeciwnika',
-      resultWin: 'Wygrales',
-      resultLoss: 'Przegrales',
-      resultDraw: 'Remis',
-      endCheckmate: 'Mat',
-      endResign: 'Poddanie',
-      endTimeout: 'Czas',
-      endDisconnectTimeout: 'Partia zakonczona po uplywie czasu na powrot przeciwnika',
-      endStalemate: 'Pat',
-      endAgreement: 'Remis zgodny',
-      endRepetition: 'Trzykrotne powtorzenie',
-      endFifty: 'Regula 50 ruchow',
-      endInsufficient: 'Niewystarczajacy material',
-      connect: 'Polacz',
       connected: 'Polaczono',
       disconnected: 'Brak polaczenia',
       connecting: 'Laczenie z serwerem...',
@@ -417,70 +322,26 @@ export class GamePageComponent {
       alreadyQueued: 'Jestes juz w kolejce matchmakingu.',
       createRoom: 'Utworz pokoj',
       joinRoom: 'Dolacz do pokoju',
-      matchmaking: 'Matchmaking',
-      skip: 'Pomin',
-      botSetup: 'Ustawienia bota',
-      botSetupSubtitle: 'Ustaw sile, kolor i analize',
-      engineLocation: 'Miejsce działania silnika', browserFast: 'Przeglądarka · szybka gra lokalna',
-      nativeServer: 'Natywny · Stockfish 19 na serwerze', browserFlavor: 'Silnik przeglądarki',
       browserTradeoff: 'Szybkie ruchy lokalne; tempo i siła zależą od urządzenia.',
       nativeTradeoff: 'Gra na serwerze z wyborem czasu namysłu. Zaloguj się, aby zapisać partię.',
-      firstLoadNote: 'Pierwsze pobranie silnika może potrwać dłużej. Następne ruchy używają tego samego silnika.',
-      difficulty: 'Poziom trudności', difficultyNote: 'Przedziały to ustawienia, nie zmierzone rankingi FIDE.',
-      rookie: 'Nowicjusz', beginner: 'Początkujący', casual: 'Swobodny', intermediate: 'Średni',
-      advanced: 'Zaawansowany', expert: 'Ekspert', master: 'Mistrz', maximum: 'Maksimum',
       unrestricted: 'Stockfish 19 bez ograniczeń', customLevel: 'Własny poziom (200–3190)',
-      account: 'Konto', accountName: 'Nazwa użytkownika', email: 'Email', password: 'Hasło',
-      authRequired: 'Podaj nazwę użytkownika i hasło; przy rejestracji także email.',
       sessionExpired: 'Sesja na serwerze wygasła. Zaloguj się ponownie.',
       analysisTab: 'Analiza', movesTab: 'Ruchy', settingsTab: 'Ustawienia',
       nativeEngine: 'Stockfish 19 na serwerze',
-      browserEngine: 'Stockfish.js 19 (gosc)',
-      guestDescription: 'Graj lokalnie bez konta. Partie nie sa zapisywane na serwerze.',
-      serverDescription: 'Zaloguj sie, aby zapisywac partie ze Stockfishem 19 na serwerze.',
-      signIn: 'Zaloguj',
-      register: 'Zarejestruj',
-      signedIn: 'Zalogowano do gry na serwerze',
-      strengthMode: 'Tryb sily',
-      beginnerMode: 'Poczatkujacy · bez kalibracji Elo',
-      trainingMode: 'Trening · przyblizone Elo Stockfisha',
-      challengeMode: 'Wyzwanie · pelna sila',
-      searchBudget: 'Czas namyslu',
       localAnalysisEngine: 'Lokalny silnik analizy',
       engineLoading: 'Ladowanie lokalnego silnika…',
       engineRetry: 'Ponow ture silnika',
-      localLevel: 'poziom lokalny',
-      botMode: 'Tryb bota',
-      botColor: 'Kolor bota',
-      botElo: 'Elo bota',
-      botPlayAs: 'Grasz jako',
-      botRandom: 'Losowo',
-      botSkill: 'Poziom',
-      botProfile: 'Profil bota',
-      botDepth: 'Glebokosc',
-      botMoveTime: 'Czas ruchu',
-      botBlunder: 'Blad',
       restartGame: 'Od nowa',
       exitGame: 'Wyjdz',
       botLabel: 'Bot',
       botGameTitle: 'Gra z botem',
-      preStartTitle: 'Gotowy do gry?',
-      preStartSubtitle: 'Ustaw bota i rozpocznij gre.',
       white: 'Biale',
       black: 'Czarne',
-      youWonTitle: 'Wygrales!',
-      botWonTitle: 'Bot wygral!',
-      resultSubtitle: 'Mozesz zagrac od nowa lub zmienic ustawienia.',
-      hints: 'Podpowiedzi',
       autoAnalysis: 'Auto analiza',
       startVsBot: 'Start z botem',
       botThinking: 'Bot mysli...',
       botReady: 'Gotowy',
-      online: 'Online',
-      offline: 'Offline',
       room: 'Pokoj',
-      token: 'Token',
-      opponent: 'Przeciwnik',
       you: 'Ty',
       guest: 'gosc',
       guestPlaceholder: 'gosc',
@@ -493,10 +354,6 @@ export class GamePageComponent {
       moveCount: 'Ruchy',
       moveWhiteLabel: 'Biale',
       moveBlackLabel: 'Czarne',
-      serverAnalysis: 'Analiza serwera',
-      localAnalysis: 'Analiza lokalna',
-      hideHints: 'Ukryj podpowiedzi',
-      showHints: 'Pokaz podpowiedzi',
       promotionTitle: 'Wybierz promocje',
       cancel: 'Anuluj'
     }
@@ -568,8 +425,7 @@ export class GamePageComponent {
           return;
         }
         try {
-          this.multiplayerHistoryMoves = this.buildMultiplayerHistory(game);
-          this.state.loadExternalState(game.fen, this.multiplayerHistoryMoves,
+          this.multiplayerHistoryMoves = this.state.loadExternalState(game.fen, game.moves,
             game.sideToMove === 'WHITE' ? 'w' : 'b');
         } catch (error) {
           this.state.status$.next(error instanceof Error ? error.message : 'Invalid game history');
@@ -603,6 +459,14 @@ export class GamePageComponent {
         }
       });
 
+    this.multiplayer.activeRoomCode$
+      .pipe(takeUntilDestroyed(destroyRef))
+      .subscribe(() => this.cdr.markForCheck());
+
+    this.multiplayer.roomParticipants$
+      .pipe(takeUntilDestroyed(destroyRef))
+      .subscribe(() => this.cdr.markForCheck());
+
     this.multiplayer.connectionState$
       .pipe(takeUntilDestroyed(destroyRef))
       .subscribe((connectionState) => {
@@ -614,17 +478,10 @@ export class GamePageComponent {
     this.multiplayer.sessionUsername$
       .pipe(takeUntilDestroyed(destroyRef))
       .subscribe((username) => {
-        this.sessionUsername = username;
         if (username) {
           this.onlineUsername = username;
           this.safeSessionSet('onlineUsername', username);
         }
-      });
-
-    this.multiplayer.sessionUserId$
-      .pipe(takeUntilDestroyed(destroyRef))
-      .subscribe((userId) => {
-        this.sessionUserId = userId;
       });
 
     this.multiplayer.lastError$
@@ -670,7 +527,6 @@ export class GamePageComponent {
           this.multiplayer.clearLastError();
         }
         this.showBotSetup = mode === 'bot';
-        this.showOnlineSetup = mode === 'online';
         this.botMode = mode === 'bot';
         this.onlineMode = mode === 'online';
         if (this.onlineMode) {
@@ -907,9 +763,7 @@ export class GamePageComponent {
         && (game.version < this.serverGame.version
           || (this.serverGame.result !== 'ONGOING' && game.result === 'ONGOING'))) return;
     try {
-      this.state.loadExternalState(game.fen,
-        game.moves.map(move => ({ san: '', from: move.from, to: move.to,
-          promotion: move.promotion ?? undefined })),
+      this.state.loadExternalState(game.fen, game.moves,
         game.sideToMove === 'WHITE' ? 'w' : 'b');
     } catch (error) {
       this.setBotError('recovery', error instanceof Error ? error.message : 'Invalid server game history');
@@ -1142,30 +996,28 @@ export class GamePageComponent {
     }
   }
 
-  startOnlineMatchmaking() {
+  startOnlineMatchmaking(timeControl: TimeControlType) {
     this.runOnlineAction(() => {
-      this.multiplayer.queueMatchmaking(this.onlineTimeControl);
+      this.multiplayer.queueMatchmaking(timeControl);
     });
   }
 
-  createOnlineRoom() {
+  createOnlineRoom(request: LobbyCreateRoomRequest) {
     this.runOnlineAction(() => {
-      this.multiplayer.createRoom(this.onlineTimeControl, {
-        name: this.onlineRoomName.trim() || undefined,
-        password: this.onlinePublicRoom ? null : (this.onlineRoomPassword.trim() || null),
-        isPublic: this.onlinePublicRoom
+      this.multiplayer.createRoom(request.timeControl, {
+        name: request.name,
+        password: request.password,
+        isPublic: request.isPublic
       });
-      this.showOnlineSetup = false;
     });
   }
 
-  joinOnlineRoom() {
-    if (!this.onlineRoomCode) {
+  joinOnlineRoom(request: LobbyJoinRoomRequest) {
+    if (!request.roomCode) {
       return;
     }
     this.runOnlineAction(() => {
-      this.multiplayer.joinRoom(this.onlineRoomCode, this.onlineJoinPassword.trim() || null, null);
-      this.showOnlineSetup = false;
+      this.multiplayer.joinRoom(request.roomCode, request.password, null);
     });
   }
 
@@ -1177,22 +1029,6 @@ export class GamePageComponent {
     this.runOnlineAction(() => {
       this.multiplayer.startRoomGame(roomCode);
     });
-  }
-
-  getYourClockMs(game: { whiteTimeLeftMs: number; blackTimeLeftMs: number }) {
-    const yourColor = this.multiplayer.yourColor$.value;
-    if (yourColor === 'BLACK') {
-      return this.displayBlackMs ?? game.blackTimeLeftMs;
-    }
-    return this.displayWhiteMs ?? game.whiteTimeLeftMs;
-  }
-
-  getOpponentClockMs(game: { whiteTimeLeftMs: number; blackTimeLeftMs: number }) {
-    const yourColor = this.multiplayer.yourColor$.value;
-    if (yourColor === 'BLACK') {
-      return this.displayWhiteMs ?? game.whiteTimeLeftMs;
-    }
-    return this.displayBlackMs ?? game.blackTimeLeftMs;
   }
 
   formatClock(ms: number | null | undefined) {
@@ -1323,162 +1159,12 @@ export class GamePageComponent {
     return this.translations[this.lang][key];
   }
 
-  onlineErrorMessage(code: string | null) {
-    if (!code) {
-      return '';
-    }
-    switch (code) {
-      case 'room_not_found':
-        return 'Room not found.';
-      case 'bad_password':
-        return 'Wrong password.';
-      case 'room_full':
-        return 'Room is full.';
-      case 'active_game':
-        return 'You are already in an active game.';
-      case 'room_join_failed':
-        return 'Unable to join room.';
-      case 'already_in_room':
-        return 'You are already in another room.';
-      case 'host_cannot_join':
-        return 'You are the host of this room.';
-      case 'room_create_failed':
-      case 'roomCreateFailed':
-        return 'Unable to create room.';
-      case 'matchmaking_failed':
-      case 'matchmakingFailed':
-        return 'Matchmaking unavailable.';
-      case 'already_queued':
-        return this.t('alreadyQueued');
-      case 'reconnect_failed':
-        return this.t('reconnectFailed');
-      case 'reconnect_ack_timeout':
-        return this.t('reconnectAckTimeout');
-      case 'invalid_reconnect_token':
-      case 'invalid_room_reconnect_token':
-        return this.t('recoveryFailed');
-      case 'invalid_game_snapshot':
-        return this.t('invalidGameSnapshot');
-      case 'state_conflict':
-        return this.t('stateConflict');
-      case 'snapshot_recovery_failed':
-        return this.t('snapshotRecoveryFailed');
-      case 'room_invite_failed':
-      case 'roomInviteFailed':
-        return 'Unable to create invite.';
-      case 'room_kick_failed':
-      case 'roomKickFailed':
-        return 'Unable to remove player.';
-      case 'room_delete_failed':
-      case 'roomDeleteFailed':
-        return 'Unable to delete room.';
-      case 'room_start_failed':
-      case 'roomStartFailed':
-        return 'Unable to start game.';
-      case 'room_in_game':
-        return 'Room already in game.';
-      case 'roomKicked':
-        return this.t('roomKicked');
-      case 'room_closed_host_deleted':
-        return this.t('roomClosedHostDeleted');
-      case 'room_closed_host_left':
-        return this.t('roomClosedHostLeft');
-      case 'room_closed_host_disconnected':
-        return this.t('roomClosedHostDisconnected');
-      case 'room_closed_room_expired':
-        return this.t('roomClosedRoomExpired');
-      case 'room_closed_no_active_participants':
-        return this.t('roomClosedNoParticipants');
-      case 'roomClosed':
-        return this.t('roomClosed');
-      case 'roomDeleted':
-        return this.t('roomDeleted');
-      case 'draw_offer_limit':
-        return 'Draw offer limit reached.';
-      case 'room_spectate_failed':
-      case 'roomSpectateFailed':
-        return 'Unable to spectate room.';
-      default:
-        return this.t('onlineActionFailed');
-    }
-  }
-
-  isOwnRoom(room: { hostUserId?: number | null }) {
-    if (!room || room.hostUserId == null || this.sessionUserId == null) {
-      return false;
-    }
-    return room.hostUserId === this.sessionUserId;
-  }
-
-  roomParticipants() {
-    return this.multiplayer.roomParticipants$.value ?? [];
-  }
-
-  isHostInRoom() {
-    const userId = this.sessionUserId;
-    if (userId == null) {
-      return false;
-    }
-    return this.multiplayer.roomParticipants$.value.some(
-      (p) => (p.role || '').toUpperCase() === 'HOST' && p.userId === userId
-    );
-  }
-
-  canKickParticipant(participant: { userId?: number | null; role?: string | null }) {
-    if (!participant || participant.userId == null) {
-      return false;
-    }
-    const role = (participant.role || '').toUpperCase();
-    if (role !== 'PLAYER' && role !== 'SPECTATOR') {
-      return false;
-    }
-    return this.isHostInRoom() && participant.userId !== this.sessionUserId;
-  }
-
-  hasPendingPlayer() {
-    return this.multiplayer.roomParticipants$.value.some(
-      (p) => (p.role || '').toUpperCase() === 'PLAYER' && (p.status || '').toUpperCase() !== 'LEFT'
-    );
-  }
-
-  private isPlayerInRoom() {
-    const userId = this.sessionUserId;
-    if (userId == null) {
-      return false;
-    }
-    return this.multiplayer.roomParticipants$.value.some(
-      (p) =>
-        (p.role || '').toUpperCase() === 'PLAYER' &&
-        (p.status || '').toUpperCase() !== 'LEFT' &&
-        p.userId === userId
-    );
-  }
-
-  isActiveRoom(roomCode: string) {
-    const active = this.multiplayer.activeRoomCode$.value;
-    if (!active) {
-      return false;
-    }
-    return active.toUpperCase() === roomCode.toUpperCase();
+  multiplayerGameActive() {
+    return this.onlineMode && !!this.multiplayer.gameState$.value?.gameId;
   }
 
   hasActiveRoom() {
     return !!this.multiplayer.activeRoomCode$.value;
-  }
-
-  roomVisibilityLabel() {
-    const code = this.multiplayer.activeRoomCode$.value || this.multiplayer.roomCode$.value;
-    if (!code) {
-      return '';
-    }
-    const match = this.multiplayer.publicRooms$.value.find(
-      (room) => room.roomCode.toUpperCase() === code.toUpperCase()
-    );
-    return match ? this.t('roomPublic') : this.t('roomPrivate');
-  }
-
-  multiplayerGameActive() {
-    return this.onlineMode && !!this.multiplayer.gameState$.value?.gameId;
   }
 
   connectionStatusLabel() {
@@ -1528,23 +1214,6 @@ export class GamePageComponent {
     const status = `${this.t('gameInProgress')} · ${turn}`;
     return this.state.positionStatus$.value === 'CHECK'
       ? `${this.t('checkAlert')} · ${status}` : status;
-  }
-
-  private buildMultiplayerHistory(game: GameStateSyncDto): MoveView[] {
-    const replay = new Chess();
-    return game.moves.map((move) => {
-      const applied = replay.move({
-        from: move.from as Square,
-        to: move.to as Square,
-        promotion: (move.promotion ?? undefined) as 'q' | 'r' | 'b' | 'n' | undefined
-      });
-      return {
-        san: applied.san,
-        from: applied.from,
-        to: applied.to,
-        promotion: applied.promotion
-      };
-    });
   }
 
   chessArenaState(): ChessArenaState {
@@ -1668,23 +1337,6 @@ export class GamePageComponent {
         || this.multiplayer.connectionState$.value === 'ERROR') {
       this.connectOnline();
     }
-  }
-
-  setOnlineView(view: 'public' | 'create' | 'join' | 'manage') {
-    this.onlineView = view;
-    this.multiplayer.clearLastError();
-  }
-
-  onOnlineTabKeydown(event: KeyboardEvent) {
-    const tabs: Array<typeof this.onlineView> = ['public', 'create', 'join', 'manage'];
-    const index = tabs.indexOf(this.onlineView);
-    const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
-      : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
-      : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
-    if (next < 0) return;
-    event.preventDefault();
-    this.setOnlineView(tabs[next]);
-    (event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   }
 
   private parseEvalValue(raw: string | null | undefined) {
