@@ -14,6 +14,7 @@ const evidence = resolve(root, '../docs/arena-evidence');
 const devUrl = process.env.ARENA_DEV_URL || 'http://localhost:4200';
 const dist = resolve(root, 'dist/chess-web/browser');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const responsiveViewports = [[375,667],[390,844],[768,1024],[1024,768],[1280,720],[1366,768],[1440,900],[1920,1080]];
 await mkdir(evidence, { recursive: true });
 const mime = { '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm' };
 const server = createServer(async (req, res) => {
@@ -71,7 +72,7 @@ try {
   await evaluate(`document.querySelector('app-chess-arena-animation').getAnimations({subtree:true}).forEach(a=>a.play());true`);
   await sleep(3800);
   await screenshot('arena-revealed');
-  for (const [width, height] of [[375,667],[390,844],[768,1024],[1024,768],[1280,720],[1366,768],[1440,900],[1920,1080]]) {
+  for (const [width, height] of responsiveViewports) {
     await viewport(width, height);
     await settle();
     await sleep(150);
@@ -79,12 +80,25 @@ try {
     const actionLayout = await evaluate(`(() => {
       const buttons=[...document.querySelectorAll('.hero-actions .arena-button')];
       const rects=buttons.map(button=>button.getBoundingClientRect());
+      const hero=document.querySelector('.hero-text').getBoundingClientRect();
+      const actions=document.querySelector('.hero-actions').getBoundingClientRect();
+      const labelCenters=buttons.map(button=>{
+        const rect=button.querySelector('span').getBoundingClientRect();
+        return rect.left+rect.width/2;
+      });
       return {count:buttons.length, widths:rects.map(rect=>rect.width), lefts:rects.map(rect=>rect.left),
-        tops:rects.map(rect=>rect.top), bottoms:rects.map(rect=>rect.bottom), featureChips:!!document.querySelector('.hero-features')};
+        tops:rects.map(rect=>rect.top), bottoms:rects.map(rect=>rect.bottom),
+        heroCenter:hero.left+hero.width/2, actionsCenter:actions.left+actions.width/2,
+        buttonCenters:rects.map(rect=>rect.left+rect.width/2), labelCenters,
+        featureChips:!!document.querySelector('.hero-features')};
     })()`);
     assert.equal(actionLayout.count, 2, `Both landing actions must render at ${width}`);
     assert.ok(Math.abs(actionLayout.widths[0] - actionLayout.widths[1]) <= 1, `Landing actions must have equal widths at ${width}`);
     assert.ok(Math.abs(actionLayout.lefts[0] - actionLayout.lefts[1]) <= 1, `Landing actions must share a left edge at ${width}`);
+    assert.ok(Math.abs(actionLayout.actionsCenter - actionLayout.heroCenter) <= 1, `Landing action group must be centered under the hero copy at ${width}`);
+    actionLayout.buttonCenters.forEach((center, index) => {
+      assert.ok(Math.abs(center - actionLayout.labelCenters[index]) <= 2, `Landing button label ${index + 1} must be centered at ${width}`);
+    });
     assert.ok(actionLayout.bottoms[0] <= actionLayout.tops[1] + 1, `Landing actions must stay stacked at ${width}`);
     assert.equal(actionLayout.featureChips, false, `Landing feature chips must stay removed at ${width}`);
     const name = `home-${width}x${height}`;
@@ -113,6 +127,28 @@ try {
   await until(`document.querySelector('h1')?.textContent.trim() === 'Play with purpose.'`);
   report.checks.homeEnglishTranslationRestores = await evaluate(`localStorage.getItem('lang') === 'en' &&
     document.querySelector('.language-toggle button:first-child')?.getAttribute('aria-pressed') === 'true'`);
+  await evaluate(`[...document.querySelectorAll('.language-toggle button')].find(button => button.textContent.trim() === 'PL').click();true`);
+  await until(`document.querySelector('h1')?.textContent.trim() === 'Graj z pomysłem.'`);
+  await viewport(720, 450);
+  await settle();
+  const zoomLayout = await evaluate(`(() => {
+    const description=document.querySelector('.hero-description');
+    const rect=description.getBoundingClientRect();
+    return {innerWidth,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight,
+      innerHeight,descriptionRight:rect.right,descriptionClipped:description.scrollHeight>description.clientHeight+1};
+  })()`);
+  assert.ok(zoomLayout.scrollWidth <= zoomLayout.innerWidth + 1, 'Polish hero must not overflow at simulated 200% zoom');
+  assert.ok(zoomLayout.descriptionRight <= zoomLayout.innerWidth + 1, 'Polish hero description must stay within the zoomed viewport');
+  assert.equal(zoomLayout.descriptionClipped, false, 'Polish hero description must not be clipped at simulated 200% zoom');
+  report.zoomCheck = { percent: 200, sourceViewport: { width: 1440, height: 900 },
+    emulatedLayoutViewport: { width: 720, height: 450 }, horizontalOverflow: false,
+    verticalScrollRequired: zoomLayout.scrollHeight > zoomLayout.innerHeight, polishDescriptionClipped: false };
+  await screenshot('home-polish-zoom-200');
+  report.screenshots.push({ name: 'home-polish-zoom-200', width: 720, height: 450, fullPage: true });
+  report.checks.homePolishFitsAt200PercentZoom = true;
+  await evaluate(`[...document.querySelectorAll('.language-toggle button')].find(button => button.textContent.trim() === 'EN').click();true`);
+  await until(`document.querySelector('h1')?.textContent.trim() === 'Play with purpose.'`);
+  await viewport(1440, 900);
   const visitLandingAction = async mode => {
     await evaluate(`document.querySelector('.hero-actions a[href="/game?mode=${mode}"]').click();true`);
     await until(`location.pathname === '/game' && new URLSearchParams(location.search).get('mode') === '${mode}' &&
@@ -133,6 +169,17 @@ try {
   await evaluate(`{const p=${gamePage};if(p.multiplayer.client)p.multiplayer.client.onWebSocketClose=()=>{};p.multiplayer.disconnect();p.multiplayer.connected$.next(true);p.multiplayer.connectionState$.next('READY');p.multiplayer.ready$.next(true);ng.applyChanges(p)};true`);
   await settle();
   await screenshot('lobby-idle');
+  report.lobbyResponsive = [];
+  for (const [width, height] of responsiveViewports) {
+    await viewport(width, height);
+    const layout = await evaluate(`({innerWidth,scrollWidth:document.documentElement.scrollWidth,
+      innerHeight,scrollHeight:document.documentElement.scrollHeight})`);
+    assert.ok(layout.scrollWidth <= layout.innerWidth + 1, `Lobby horizontal overflow at ${width}x${height}`);
+    report.lobbyResponsive.push({ width, height, horizontalOverflow: false,
+      verticalScrollRequired: layout.scrollHeight > layout.innerHeight });
+  }
+  report.checks.lobbyNoHorizontalOverflowAtEveryViewport = true;
+  await viewport(1440, 900);
   await evaluate(`{const p=${gamePage};p.multiplayer.queueState$.next('QUEUED');ng.applyChanges(p)};true`);
   await sleep(450);
   await screenshot('waiting-for-opponent');
@@ -147,7 +194,26 @@ try {
   await screenshot('match-found');
   await sleep(1100);
   await until('!document.querySelector("app-chess-arena-animation")');
-  await screenshot('active-game');
+  report.activeGameResponsive = [];
+  for (const [width, height] of responsiveViewports) {
+    await viewport(width, height);
+    const layout = await evaluate(`(() => {
+      const board=document.querySelector('app-board');
+      const rect=board?.getBoundingClientRect();
+      let blurred=false;
+      for(let node=board;node;node=node.parentElement){if(getComputedStyle(node).filter.includes('blur('))blurred=true;}
+      return {innerWidth,scrollWidth:document.documentElement.scrollWidth,innerHeight,
+        scrollHeight:document.documentElement.scrollHeight,boardLeft:rect?.left,boardRight:rect?.right,blurred};
+    })()`);
+    assert.ok(layout.scrollWidth <= layout.innerWidth + 1, `Active game horizontal overflow at ${width}x${height}`);
+    assert.ok(layout.boardLeft >= -1 && layout.boardRight <= layout.innerWidth + 1,
+      `Chessboard must stay within the viewport at ${width}x${height}`);
+    assert.equal(layout.blurred, false, `Chessboard must not be blurred during active play at ${width}x${height}`);
+    report.activeGameResponsive.push({ width, height, horizontalOverflow: false,
+      verticalScrollRequired: layout.scrollHeight > layout.innerHeight, boardWithinViewport: true, blurred: false });
+  }
+  report.checks.activeGameResponsiveAtEveryViewport = true;
+  await viewport(1440, 900);
   await evaluate(`{const p=${gamePage};p.multiplayer.handleGameStarted(${JSON.stringify(event)});ng.applyChanges(p)};true`);
   assert.equal(await evaluate(`${gamePage}.multiplayer.matchFound$.value`), false, 'Duplicate event must not celebrate again');
   await evaluate(`{const p=${gamePage};p.multiplayer.connectionState$.next('RECONNECTING');ng.applyChanges(p)};true`);

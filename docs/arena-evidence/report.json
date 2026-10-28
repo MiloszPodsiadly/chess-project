@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-28T11:30:23.722Z",
+  "timestamp": "2026-10-28T13:32:07.880Z",
   "browser": {
     "product": "Chromium 156.0.8078.4"
   },
@@ -64,6 +64,12 @@
       "width": 1440,
       "height": 900,
       "fullPage": true
+    },
+    {
+      "name": "home-polish-zoom-200",
+      "width": 720,
+      "height": 450,
+      "fullPage": true
     }
   ],
   "benchmarks": [
@@ -86,12 +92,12 @@
       "height": 900,
       "cpuSlowdown": 4,
       "state": "LOBBY",
-      "fps": 59.83644704474437,
+      "fps": 60.00265939764642,
       "p95FrameMs": 16.799999999999272,
-      "maxFrameMs": 33.29999999999927,
+      "maxFrameMs": 16.80000000000109,
       "longTasks": 0,
       "maxLongTaskMs": 0,
-      "frames": 360
+      "frames": 361
     },
     {
       "name": "mobile-cpu4",
@@ -99,12 +105,12 @@
       "height": 667,
       "cpuSlowdown": 4,
       "state": "LOBBY",
-      "fps": 60.00265939764642,
+      "fps": 59.83644704474439,
       "p95FrameMs": 16.799999999999272,
-      "maxFrameMs": 16.80000000000291,
+      "maxFrameMs": 33.30000000000291,
       "longTasks": 0,
       "maxLongTaskMs": 0,
-      "frames": 361
+      "frames": 360
     },
     {
       "name": "waiting-cpu4",
@@ -112,7 +118,7 @@
       "height": 900,
       "cpuSlowdown": 4,
       "state": "WAITING_FOR_OPPONENT (CSS fixture)",
-      "fps": 60.00365673254326,
+      "fps": 60.00265939764642,
       "p95FrameMs": 16.700000000000728,
       "maxFrameMs": 16.80000000000291,
       "longTasks": 0,
@@ -127,8 +133,11 @@
     "homeUsesCinematicScene": true,
     "homePolishTranslationPersists": true,
     "homeEnglishTranslationRestores": true,
+    "homePolishFitsAt200PercentZoom": true,
     "homePlayBotNavigates": true,
     "homePlayOnlineNavigates": true,
+    "lobbyNoHorizontalOverflowAtEveryViewport": true,
+    "activeGameResponsiveAtEveryViewport": true,
     "matchAvailableImmediately": true,
     "duplicateMatchIgnored": true,
     "sceneRemovedDuringGameplay": true,
@@ -137,14 +146,144 @@
     "offscreenPauseAndResume": true,
     "noIntroReplayAfterNavigation": true
   },
+  "zoomCheck": {
+    "percent": 200,
+    "sourceViewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "emulatedLayoutViewport": {
+      "width": 720,
+      "height": 450
+    },
+    "horizontalOverflow": false,
+    "verticalScrollRequired": true,
+    "polishDescriptionClipped": false
+  },
+  "lobbyResponsive": [
+    {
+      "width": 375,
+      "height": 667,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": true
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": true
+    },
+    {
+      "width": 768,
+      "height": 1024,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": true
+    },
+    {
+      "width": 1024,
+      "height": 768,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false
+    },
+    {
+      "width": 1366,
+      "height": 768,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false
+    }
+  ],
+  "activeGameResponsive": [
+    {
+      "width": 375,
+      "height": 667,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": true,
+      "boardWithinViewport": true,
+      "blurred": false
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false,
+      "boardWithinViewport": true,
+      "blurred": false
+    },
+    {
+      "width": 768,
+      "height": 1024,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": true,
+      "boardWithinViewport": true,
+      "blurred": false
+    },
+    {
+      "width": 1024,
+      "height": 768,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false,
+      "boardWithinViewport": true,
+      "blurred": false
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false,
+      "boardWithinViewport": true,
+      "blurred": false
+    },
+    {
+      "width": 1366,
+      "height": 768,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false,
+      "boardWithinViewport": true,
+      "blurred": false
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false,
+      "boardWithinViewport": true,
+      "blurred": false
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "horizontalOverflow": false,
+      "verticalScrollRequired": false,
+      "boardWithinViewport": true,
+      "blurred": false
+    }
+  ],
   "navigationMemory": {
     "cycles": 20,
     "before": {
       "heap": {
-        "usedSize": 4000000,
+        "usedSize": 4033508,
         "totalSize": 4456448,
-        "embedderHeapUsedSize": 2591480,
-        "backingStorageSize": 685247
+        "embedderHeapUsedSize": 2520568,
+        "backingStorageSize": 696586
       },
       "dom": {
         "documents": 1,
@@ -156,10 +295,10 @@
       {
         "cycles": 1,
         "heap": {
-          "usedSize": 4254256,
+          "usedSize": 4288232,
           "totalSize": 4718592,
-          "embedderHeapUsedSize": 2638440,
-          "backingStorageSize": 685429
+          "embedderHeapUsedSize": 2550664,
+          "backingStorageSize": 696768
         },
         "dom": {
           "documents": 1,
@@ -170,10 +309,10 @@
       {
         "cycles": 5,
         "heap": {
-          "usedSize": 4858452,
-          "totalSize": 5505024,
-          "embedderHeapUsedSize": 2574560,
-          "backingStorageSize": 685429
+          "usedSize": 4894840,
+          "totalSize": 5242880,
+          "embedderHeapUsedSize": 2568560,
+          "backingStorageSize": 696768
         },
         "dom": {
           "documents": 1,
@@ -184,10 +323,10 @@
       {
         "cycles": 10,
         "heap": {
-          "usedSize": 5068208,
+          "usedSize": 5103620,
           "totalSize": 5505024,
-          "embedderHeapUsedSize": 2559136,
-          "backingStorageSize": 685429
+          "embedderHeapUsedSize": 2712112,
+          "backingStorageSize": 696768
         },
         "dom": {
           "documents": 1,
@@ -198,10 +337,10 @@
       {
         "cycles": 20,
         "heap": {
-          "usedSize": 5182588,
+          "usedSize": 5217328,
           "totalSize": 5767168,
-          "embedderHeapUsedSize": 2547912,
-          "backingStorageSize": 685429
+          "embedderHeapUsedSize": 2585808,
+          "backingStorageSize": 696768
         },
         "dom": {
           "documents": 1,
@@ -212,10 +351,10 @@
     ],
     "after": {
       "heap": {
-        "usedSize": 5182588,
+        "usedSize": 5217328,
         "totalSize": 5767168,
-        "embedderHeapUsedSize": 1995392,
-        "backingStorageSize": 685429
+        "embedderHeapUsedSize": 1991784,
+        "backingStorageSize": 696768
       },
       "dom": {
         "documents": 1,
@@ -223,14 +362,14 @@
         "jsEventListeners": 15
       }
     },
-    "retainedHeapDelta": 1182588
+    "retainedHeapDelta": 1183820
   },
   "runtimeErrors": [],
   "sceneChunks": [
     {
-      "path": "chunk-VWAH5JGY.js",
-      "bytes": 22195,
-      "gzipBytes": 7234
+      "path": "chunk-CCFKSZQ5.js",
+      "bytes": 22207,
+      "gzipBytes": 7240
     }
   ]
 }
