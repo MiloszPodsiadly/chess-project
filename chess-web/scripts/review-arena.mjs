@@ -1,6 +1,6 @@
 // Local evidence runner. Requires a dev server for Angular state fixtures and a production build.
-// Chrome DevTools Protocol only: no browser library or production diagnostics are added.
-import { spawn } from 'node:child_process';
+// Playwright supplies a cross-platform Chromium binary; production performance is measured on the built bundle.
+import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { resolve, dirname, extname, sep } from 'node:path';
@@ -11,13 +11,10 @@ import assert from 'node:assert/strict';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const evidence = resolve(root, '../docs/arena-evidence');
-const profile = resolve(root, 'tmp', `arena-browser-${process.pid}`);
-const devUrl = process.env.ARENA_DEV_URL || 'http://127.0.0.1:4200';
-const chromePath = process.env.ARENA_BROWSER || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const devUrl = process.env.ARENA_DEV_URL || 'http://localhost:4200';
 const dist = resolve(root, 'dist/chess-web/browser');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 await mkdir(evidence, { recursive: true });
-await mkdir(profile, { recursive: true });
 const mime = { '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm' };
 const server = createServer(async (req, res) => {
   try {
@@ -31,46 +28,17 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const prodUrl = `http://127.0.0.1:${server.address().port}`;
-const browser = spawn(chromePath, ['--headless=new', '--no-first-run', '--no-default-browser-check',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1440,900', 'about:blank'],
-  { windowsHide: true, stdio: 'ignore' });
-let socket;
-let closeBrowser = async () => {};
+const browser = await chromium.launch({ headless: true });
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const page = await context.newPage();
+const cdp = await context.newCDPSession(page);
+const send = (method, params = {}) => cdp.send(method, params);
+const runtimeErrors = [];
+page.on('pageerror', error => runtimeErrors.push(error.message));
+cdp.on('Runtime.exceptionThrown', event => runtimeErrors.push(event.exceptionDetails.text));
 let browserClosed = false;
 try {
-  let port;
-  for (let attempt = 0; attempt < 100; attempt++) {
-    try { port = (await readFile(resolve(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]; break; }
-    catch { await sleep(100); }
-  }
-  assert.ok(port, 'Chrome did not expose a DevTools port');
-  const target = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' }).then(r => r.json());
-  socket = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((r, reject) => { socket.onopen = r; socket.onerror = reject; });
-  let nextId = 0;
-  const pending = new Map();
-  const runtimeErrors = [];
-  socket.onmessage = ({ data }) => {
-    const message = JSON.parse(data);
-    if (message.method === 'Runtime.exceptionThrown') runtimeErrors.push(message.params.exceptionDetails.text);
-    const request = pending.get(message.id);
-    if (!request) return;
-    pending.delete(message.id);
-    clearTimeout(request.timeout);
-    message.error ? request.reject(new Error(JSON.stringify(message.error))) : request.resolve(message.result);
-  };
-  const send = (method, params = {}) => new Promise((resolve, reject) => {
-    const id = ++nextId;
-    const timeout = setTimeout(() => { pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); }, 30000);
-    pending.set(id, { resolve, reject, timeout });
-    socket.send(JSON.stringify({ id, method, params }));
-  });
-  closeBrowser = () => send('Browser.close');
-  const evaluate = async expression => {
-    const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
-    return result.result?.value;
-  };
+  const evaluate = expression => page.evaluate(expression);
   const until = async expression => {
     for (let i = 0; i < 160; i++) { if (await evaluate(expression)) return; await sleep(100); }
     throw new Error(`Browser condition timed out: ${expression}`);
@@ -90,7 +58,7 @@ try {
       clip: { x: 0, y: 0, width: cssContentSize.width, height: cssContentSize.height, scale: 1 } });
     await writeFile(resolve(evidence, name + '.png'), Buffer.from(data, 'base64'));
   };
-  const report = { timestamp: new Date().toISOString(), browser: await send('Browser.getVersion'),
+  const report = { timestamp: new Date().toISOString(), browser: { product: `Chromium ${browser.version()}` },
     environment: { cpu: cpus()[0]?.model, logicalCpus: cpus().length, ramGiB: +(totalmem() / 2 ** 30).toFixed(1), platform: platform(), mode: 'headless Chrome; mobile uses emulation with 4x CPU slowdown' },
     screenshots: [], benchmarks: [], checks: {} };
   await send('Page.enable');
@@ -160,29 +128,29 @@ try {
   report.checks.homePlayOnlineNavigates = true;
   await load(devUrl + '/game?mode=online');
   await until('!!window.ng?.getComponent(document.querySelector("app-game-page"))');
-  const page = `ng.getComponent(document.querySelector('app-game-page'))`;
+  const gamePage = `ng.getComponent(document.querySelector('app-game-page'))`;
   // Isolate the visual fixture from the dev server's asynchronous socket-close callback.
-  await evaluate(`{const p=${page};if(p.multiplayer.client)p.multiplayer.client.onWebSocketClose=()=>{};p.multiplayer.disconnect();p.multiplayer.connected$.next(true);p.multiplayer.connectionState$.next('READY');p.multiplayer.ready$.next(true);ng.applyChanges(p)};true`);
+  await evaluate(`{const p=${gamePage};if(p.multiplayer.client)p.multiplayer.client.onWebSocketClose=()=>{};p.multiplayer.disconnect();p.multiplayer.connected$.next(true);p.multiplayer.connectionState$.next('READY');p.multiplayer.ready$.next(true);ng.applyChanges(p)};true`);
   await settle();
   await screenshot('lobby-idle');
-  await evaluate(`{const p=${page};p.multiplayer.queueState$.next('QUEUED');ng.applyChanges(p)};true`);
+  await evaluate(`{const p=${gamePage};p.multiplayer.queueState$.next('QUEUED');ng.applyChanges(p)};true`);
   await sleep(450);
   await screenshot('waiting-for-opponent');
   const event = { gameId: 'visual-fixture-match', fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
     sideToMove: 'WHITE', yourColor: 'WHITE', timeControlType: 'RAPID', whiteTimeLeftMs: 600000, blackTimeLeftMs: 600000,
     reconnectToken: 'visual-fixture-only', version: 0 };
-  await evaluate(`{const p=${page};p.multiplayer.handleGameStarted(${JSON.stringify(event)});ng.applyChanges(p)};true`);
-  assert.equal(await evaluate(`${page}.canHumanMove()`), true, 'Gameplay must be available during match celebration');
-  await evaluate(`${page}.onSquareClick('e2');ng.applyChanges(${page});true`);
-  assert.equal(await evaluate(`${page}.state.selectedSquare$.value`), 'e2');
+  await evaluate(`{const p=${gamePage};p.multiplayer.handleGameStarted(${JSON.stringify(event)});ng.applyChanges(p)};true`);
+  assert.equal(await evaluate(`${gamePage}.canHumanMove()`), true, 'Gameplay must be available during match celebration');
+  await evaluate(`${gamePage}.onSquareClick('e2');ng.applyChanges(${gamePage});true`);
+  assert.equal(await evaluate(`${gamePage}.state.selectedSquare$.value`), 'e2');
   await sleep(600);
   await screenshot('match-found');
   await sleep(1100);
   await until('!document.querySelector("app-chess-arena-animation")');
   await screenshot('active-game');
-  await evaluate(`{const p=${page};p.multiplayer.handleGameStarted(${JSON.stringify(event)});ng.applyChanges(p)};true`);
-  assert.equal(await evaluate(`${page}.multiplayer.matchFound$.value`), false, 'Duplicate event must not celebrate again');
-  await evaluate(`{const p=${page};p.multiplayer.connectionState$.next('RECONNECTING');ng.applyChanges(p)};true`);
+  await evaluate(`{const p=${gamePage};p.multiplayer.handleGameStarted(${JSON.stringify(event)});ng.applyChanges(p)};true`);
+  assert.equal(await evaluate(`${gamePage}.multiplayer.matchFound$.value`), false, 'Duplicate event must not celebrate again');
+  await evaluate(`{const p=${gamePage};p.multiplayer.connectionState$.next('RECONNECTING');ng.applyChanges(p)};true`);
   await until('!!document.querySelector("app-chess-arena-animation svg")');
   assert.equal(await evaluate('document.querySelector("app-chess-arena-animation").classList.contains("has-intro")'), false);
   await screenshot('reconnecting');
@@ -258,12 +226,10 @@ try {
   }
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log('Arena evidence:', evidence);
-  await send('Browser.close');
+  await browser.close();
   browserClosed = true;
 } finally {
-  if (socket?.readyState === 1 && !browserClosed) await closeBrowser().catch(() => {});
-  socket?.close();
-  if (browser.exitCode === null) browser.kill();
+  if (!browserClosed) await browser.close().catch(() => {});
   server.closeAllConnections();
   server.close();
 }
