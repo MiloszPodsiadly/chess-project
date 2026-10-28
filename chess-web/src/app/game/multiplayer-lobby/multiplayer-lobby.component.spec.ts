@@ -21,4 +21,22 @@ describe('MultiplayerLobbyComponent', () => {
     expect(component.onlineErrorMessage('snapshot_recovery_failed'))
       .toBe('Zachowano obecną planszę.');
   });
+
+  it('localizes room errors and legacy event aliases through the active dictionary', () => {
+    const component = lobby({
+      roomNotFoundError: 'Nie znaleziono pokoju.',
+      wrongRoomPasswordError: 'Nieprawidłowe hasło.',
+      roomCreateFailedError: 'Nie udało się utworzyć pokoju.',
+      roomSpectateFailedError: 'Nie udało się dołączyć jako widz.',
+      onlineActionFailed: 'Nie udało się wykonać akcji.'
+    });
+
+    expect(component.onlineErrorMessage('room_not_found')).toBe('Nie znaleziono pokoju.');
+    expect(component.onlineErrorMessage('bad_password')).toBe('Nieprawidłowe hasło.');
+    expect(component.onlineErrorMessage('roomCreateFailed'))
+      .toBe('Nie udało się utworzyć pokoju.');
+    expect(component.onlineErrorMessage('roomSpectateFailed'))
+      .toBe('Nie udało się dołączyć jako widz.');
+    expect(component.onlineErrorMessage('malformed_request')).toBe('Nie udało się wykonać akcji.');
+  });
 });

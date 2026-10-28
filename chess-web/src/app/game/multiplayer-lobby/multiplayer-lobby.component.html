@@ -35,11 +35,13 @@
       {{ t('quickStart') }}
     </button>
   </div>
-  <div class="connection-banner" role="status" aria-live="polite" *ngIf="multiplayer.connectionState$ | async as connectionState">
+  <div class="connection-banner" role="status" aria-live="polite" *ngIf="(multiplayer.connectionState$ | async) !== 'READY'">
+    <ng-container *ngIf="multiplayer.connectionState$ | async as connectionState">
     <span>{{ connectionLabel }}</span>
     <button type="button" class="ghost" *ngIf="connectionState === 'ERROR'" (click)="retryRequested.emit()">
       {{ t('retryConnection') }}
     </button>
+    </ng-container>
   </div>
   <div class="connection-banner matchmaking-banner" role="status" aria-live="polite" *ngIf="(multiplayer.queueState$ | async) === 'QUEUED'">
     <span>{{ t('matchmakingQueued') }}</span>
@@ -111,7 +113,7 @@
     </label>
     <label *ngIf="!onlinePublicRoom">
       {{ t('roomPassword') }}
-      <input type="text" [(ngModel)]="onlineRoomPassword" [placeholder]="t('roomPasswordPlaceholder')" />
+      <input type="password" autocomplete="new-password" [(ngModel)]="onlineRoomPassword" [placeholder]="t('roomPasswordPlaceholder')" />
     </label>
     <div class="lobby-actions">
       <button type="button" class="primary arena-button arena-button--primary" (click)="createOnlineRoom()">{{ t('createRoom') }}</button>
@@ -124,7 +126,7 @@
     </label>
     <label>
       {{ t('joinPassword') }}
-      <input type="text" [(ngModel)]="onlineJoinPassword" [placeholder]="t('joinPasswordPlaceholder')" />
+      <input type="password" autocomplete="current-password" [(ngModel)]="onlineJoinPassword" [placeholder]="t('joinPasswordPlaceholder')" />
     </label>
     <div class="lobby-actions">
       <button type="button" class="primary arena-button arena-button--primary" (click)="joinOnlineRoom()">{{ t('joinRoom') }}</button>

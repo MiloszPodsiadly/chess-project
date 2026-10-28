@@ -18,6 +18,48 @@ export interface LobbyJoinRoomRequest {
 
 type LobbyView = 'public' | 'create' | 'join' | 'manage';
 
+const ONLINE_ERROR_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  room_not_found: 'roomNotFoundError',
+  bad_password: 'wrongRoomPasswordError',
+  room_full: 'roomFullError',
+  active_game: 'activeGameError',
+  room_join_failed: 'roomJoinFailedError',
+  already_in_room: 'alreadyInRoomError',
+  host_cannot_join: 'hostCannotJoinError',
+  room_create_failed: 'roomCreateFailedError',
+  roomCreateFailed: 'roomCreateFailedError',
+  matchmaking_failed: 'matchmakingUnavailableError',
+  matchmakingFailed: 'matchmakingUnavailableError',
+  already_queued: 'alreadyQueued',
+  reconnect_failed: 'reconnectFailed',
+  reconnect_ack_timeout: 'reconnectAckTimeout',
+  invalid_reconnect_token: 'recoveryFailed',
+  invalid_room_reconnect_token: 'recoveryFailed',
+  invalid_game_snapshot: 'invalidGameSnapshot',
+  state_conflict: 'stateConflict',
+  snapshot_recovery_failed: 'snapshotRecoveryFailed',
+  room_invite_failed: 'roomInviteFailedError',
+  roomInviteFailed: 'roomInviteFailedError',
+  room_kick_failed: 'roomKickFailedError',
+  roomKickFailed: 'roomKickFailedError',
+  room_delete_failed: 'roomDeleteFailedError',
+  roomDeleteFailed: 'roomDeleteFailedError',
+  room_start_failed: 'roomStartFailedError',
+  roomStartFailed: 'roomStartFailedError',
+  room_in_game: 'roomInGameError',
+  roomKicked: 'roomKicked',
+  room_closed_host_deleted: 'roomClosedHostDeleted',
+  room_closed_host_left: 'roomClosedHostLeft',
+  room_closed_host_disconnected: 'roomClosedHostDisconnected',
+  room_closed_room_expired: 'roomClosedRoomExpired',
+  room_closed_no_active_participants: 'roomClosedNoParticipants',
+  roomClosed: 'roomClosed',
+  roomDeleted: 'roomDeleted',
+  draw_offer_limit: 'drawOfferLimitError',
+  room_spectate_failed: 'roomSpectateFailedError',
+  roomSpectateFailed: 'roomSpectateFailedError'
+};
+
 @Component({
   selector: 'app-multiplayer-lobby',
   standalone: true,
@@ -142,47 +184,6 @@ export class MultiplayerLobbyComponent {
 
   onlineErrorMessage(code: string | null): string {
     if (!code) return '';
-    switch (code) {
-      case 'room_not_found': return 'Room not found.';
-      case 'bad_password': return 'Wrong password.';
-      case 'room_full': return 'Room is full.';
-      case 'active_game': return 'You are already in an active game.';
-      case 'room_join_failed': return 'Unable to join room.';
-      case 'already_in_room': return 'You are already in another room.';
-      case 'host_cannot_join': return 'You are the host of this room.';
-      case 'room_create_failed':
-      case 'roomCreateFailed': return 'Unable to create room.';
-      case 'matchmaking_failed':
-      case 'matchmakingFailed': return 'Matchmaking unavailable.';
-      case 'already_queued': return this.t('alreadyQueued');
-      case 'reconnect_failed': return this.t('reconnectFailed');
-      case 'reconnect_ack_timeout': return this.t('reconnectAckTimeout');
-      case 'invalid_reconnect_token':
-      case 'invalid_room_reconnect_token': return this.t('recoveryFailed');
-      case 'invalid_game_snapshot': return this.t('invalidGameSnapshot');
-      case 'state_conflict': return this.t('stateConflict');
-      case 'snapshot_recovery_failed': return this.t('snapshotRecoveryFailed');
-      case 'room_invite_failed':
-      case 'roomInviteFailed': return 'Unable to create invite.';
-      case 'room_kick_failed':
-      case 'roomKickFailed': return 'Unable to remove player.';
-      case 'room_delete_failed':
-      case 'roomDeleteFailed': return 'Unable to delete room.';
-      case 'room_start_failed':
-      case 'roomStartFailed': return 'Unable to start game.';
-      case 'room_in_game': return 'Room already in game.';
-      case 'roomKicked': return this.t('roomKicked');
-      case 'room_closed_host_deleted': return this.t('roomClosedHostDeleted');
-      case 'room_closed_host_left': return this.t('roomClosedHostLeft');
-      case 'room_closed_host_disconnected': return this.t('roomClosedHostDisconnected');
-      case 'room_closed_room_expired': return this.t('roomClosedRoomExpired');
-      case 'room_closed_no_active_participants': return this.t('roomClosedNoParticipants');
-      case 'roomClosed': return this.t('roomClosed');
-      case 'roomDeleted': return this.t('roomDeleted');
-      case 'draw_offer_limit': return 'Draw offer limit reached.';
-      case 'room_spectate_failed':
-      case 'roomSpectateFailed': return 'Unable to spectate room.';
-      default: return this.t('onlineActionFailed');
-    }
+    return this.t(ONLINE_ERROR_TRANSLATION_KEYS[code] ?? 'onlineActionFailed');
   }
 }
