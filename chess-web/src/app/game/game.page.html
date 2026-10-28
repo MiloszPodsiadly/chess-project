@@ -13,7 +13,7 @@
 
   <div class="game-grid">
     <section class="left-panel">
-      <div class="info-card board-card">
+      <div class="info-card board-card" [class.online-board-with-status]="onlineMode && showOnlineBoardStatus()">
         <div class="board-shell">
           <app-board
             *ngIf="(state.fen$ | async) as fen"
@@ -36,7 +36,7 @@
         </div>
         <div class="online-board-status" *ngIf="onlineMode && showOnlineBoardStatus()" role="status" aria-live="polite">
           <span class="online-status-dot" [class.ready]="(multiplayer.connectionState$ | async) === 'READY'" aria-hidden="true"></span>
-          <span *ngIf="(multiplayer.connectionState$ | async) !== 'READY'">{{ connectionStatusLabel() }}</span>
+          <span *ngIf="(multiplayer.connectionState$ | async) !== 'READY' && ((multiplayer.gameState$ | async) || (multiplayer.connectionState$ | async) === 'ERROR')">{{ connectionStatusLabel() }}</span>
           <span class="online-board-room" *ngIf="multiplayer.activeRoomCode$ | async as activeRoomCode">{{ t('room') }} {{ activeRoomCode }}</span>
           <span class="online-board-queue" *ngIf="(multiplayer.queueState$ | async) === 'QUEUED'">{{ t('matchmakingQueued') }}</span>
         </div>
@@ -44,7 +44,7 @@
 
     </section>
 
-    <section class="right-panel" [class.online-layout]="onlineMode">
+    <section class="right-panel" [class.online-layout]="onlineMode" [class.online-lobby-layout]="onlineMode && !(multiplayer.gameState$ | async)">
       <nav class="play-mode-switcher" *ngIf="botMode && showBotSetup || onlineMode && !(multiplayer.gameState$ | async)" [attr.aria-label]="t('playMode')">
         <a routerLink="/game" [queryParams]="{ mode: 'bot' }" [class.active]="botMode" [attr.aria-current]="botMode ? 'page' : null">
           <span>{{ t('playVsBotTab') }}</span>
@@ -55,11 +55,17 @@
       </nav>
       @if (onlineMode && chessArenaState() !== 'ACTIVE_GAME') {
         <section class="online-arena-stage" [attr.aria-label]="t('arenaPreview')">
-          @defer (on viewport) {
-            <app-chess-arena-animation variant="LOBBY" [lang]="lang" [state]="chessArenaState()"
-              [matchId]="(multiplayer.gameState$ | async)?.gameId ?? null" />
-          } @placeholder {
-            <div class="arena-placeholder" aria-hidden="true"></div>
+          @if (onlineLobbyPanelView && onlineLobbyPanelTemplate) {
+            <div class="online-lobby-panel" [class.public-rooms-panel]="onlineLobbyPanelView === 'public'" [attr.aria-label]="t('onlineSetup')">
+              <ng-container [ngTemplateOutlet]="onlineLobbyPanelTemplate" [ngTemplateOutletContext]="{ chat: roomChat }"></ng-container>
+            </div>
+          } @else {
+            @defer (on viewport) {
+              <app-chess-arena-animation class="arena-fit-stage" variant="LOBBY" [lang]="lang" [state]="chessArenaState()" [showCaption]="false"
+                [matchId]="(multiplayer.gameState$ | async)?.gameId ?? null" />
+            } @placeholder {
+              <div class="arena-placeholder" aria-hidden="true"></div>
+            }
           }
         </section>
       }
@@ -69,6 +75,8 @@
           [translations]="translations[lang]"
           [username]="onlineUsername"
           [connectionLabel]="connectionStatusLabel()"
+          (panelContentReady)="onLobbyPanelContentReady($event)"
+          (panelViewChange)="onLobbyPanelViewChange($event)"
           (usernameChange)="onlineUsername = $event"
           (retryRequested)="connectOnline()"
           (quickStart)="startOnlineMatchmaking($event)"
@@ -212,9 +220,9 @@
             </div>
           </div>
         </div>
-        <div class="connection-banner" role="status" aria-live="polite" *ngIf="multiplayer.connectionState$ | async as connectionState">
-          <span *ngIf="connectionState !== 'READY'">{{ connectionStatusLabel() }}</span>
-          <button type="button" class="ghost" *ngIf="connectionState === 'ERROR'" (click)="connectOnline()">
+        <div class="connection-banner" role="status" aria-live="polite" *ngIf="(multiplayer.connectionState$ | async) !== 'READY'">
+          <span>{{ connectionStatusLabel() }}</span>
+          <button type="button" class="ghost" *ngIf="(multiplayer.connectionState$ | async) === 'ERROR'" (click)="connectOnline()">
             {{ t('retryConnection') }}
           </button>
         </div>
@@ -224,7 +232,7 @@
         <div class="connection-banner" role="status" *ngIf="!(multiplayer.opponentDisconnected$ | async)">
           {{ t('opponentConnected') }}
         </div>
-        <div class="online-actions">
+        <div class="online-actions" *ngIf="canUseMultiplayerActions()">
           <button
             class="ghost arena-button arena-button--secondary"
             *ngIf="multiplayer.gameState$ | async as game"
@@ -277,7 +285,15 @@
           (positionIndexChange)="setMultiplayerReplayPosition($event)" />
       </div>
 
-      <div class="info-card room-preview" *ngIf="onlineMode && hasActiveRoom()" role="region" aria-labelledby="room-chat-title">
+      <ng-container *ngIf="onlineMode && hasActiveRoom() && (onlineLobbyPanelView !== 'public' || (multiplayer.gameState$ | async))">
+        <ng-container [ngTemplateOutlet]="roomChat"></ng-container>
+      </ng-container>
+    </section>
+  </div>
+</div>
+
+<ng-template #roomChat let-embedded="embedded">
+      <div class="room-chat" [class.info-card]="!embedded" [class.room-chat--embedded]="embedded" role="region" aria-labelledby="room-chat-title">
         <div class="card-header">
           <div>
             <h2 id="room-chat-title">{{ t('chatTitle') }}</h2>
@@ -292,7 +308,7 @@
             <span class="chat-text">{{ msg.message }}</span>
             <span class="chat-time">{{ msg.createdAt | date: 'shortTime' }}</span>
           </div>
-          <div class="empty-chat-state compact" *ngIf="(multiplayer.roomMessages$ | async)?.length === 0">{{ t('chatEmpty') }}</div>
+          <div class="empty-chat-state compact" *ngIf="!hasActiveRoom() || (multiplayer.roomMessages$ | async)?.length === 0">{{ t(hasActiveRoom() ? 'chatEmpty' : 'chatJoinRoom') }}</div>
         </div>
         <div class="chat-input">
           <input
@@ -300,14 +316,13 @@
             [(ngModel)]="chatMessage"
             [attr.aria-label]="t('chatPlaceholder')"
             [placeholder]="t('chatPlaceholder')"
+            [disabled]="!hasActiveRoom() || (multiplayer.connectionState$ | async) !== 'READY'"
             (keyup.enter)="sendChatMessage()"
           />
-          <button type="button" class="primary arena-button arena-button--primary" (click)="sendChatMessage()" [disabled]="!chatMessage.trim()">{{ t('send') }}</button>
+          <button type="button" class="primary arena-button arena-button--primary" (click)="sendChatMessage()" [disabled]="!chatMessage.trim() || !hasActiveRoom() || (multiplayer.connectionState$ | async) !== 'READY'">{{ t('send') }}</button>
         </div>
       </div>
-    </section>
-  </div>
-</div>
+</ng-template>
 
 <div class="promotion-overlay" *ngIf="pendingPromotion">
   <div class="promotion-modal">
@@ -325,7 +340,7 @@
   </div>
 </div>
 
-<div class="promotion-overlay" *ngIf="multiplayer.drawOffer$ | async">
+<div class="promotion-overlay" *ngIf="canUseMultiplayerActions() && (multiplayer.drawOffer$ | async)">
   <div class="promotion-modal result-modal">
     <h3>{{ t('drawOfferTitle') }}</h3>
     <p>{{ t('drawOfferSubtitle') }}</p>

@@ -1,5 +1,5 @@
-import { Component, DestroyRef, ChangeDetectorRef } from '@angular/core';
-import { AsyncPipe, NgForOf, NgIf, DatePipe } from '@angular/common';
+import { Component, DestroyRef, ChangeDetectorRef, TemplateRef } from '@angular/core';
+import { AsyncPipe, NgForOf, NgIf, NgTemplateOutlet, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { GameStateService, type MoveView } from './game-state.service';
 import { MultiplayerReplayState, type ReplayPosition } from './multiplayer-replay-state';
@@ -20,7 +20,7 @@ import { GameOutcome, multiplayerOutcome as toMultiplayerOutcome, serverOutcome 
 import { GameResultPanelComponent } from './game-result-panel/game-result-panel.component';
 import { BotSetupComponent } from './bot-setup/bot-setup.component';
 import { ChessArenaAnimationComponent, ChessArenaState } from './chess-arena-animation/chess-arena-animation.component';
-import { LobbyCreateRoomRequest, LobbyJoinRoomRequest, MultiplayerLobbyComponent } from './multiplayer-lobby/multiplayer-lobby.component';
+import { LobbyCreateRoomRequest, LobbyJoinRoomRequest, LobbyView, MultiplayerLobbyComponent } from './multiplayer-lobby/multiplayer-lobby.component';
 
 type PieceCode = string | null;
 type BotErrorScope = 'authentication' | 'configuration' | 'engine' | 'gameplay' | 'recovery';
@@ -28,7 +28,7 @@ type BotErrorScope = 'authentication' | 'configuration' | 'engine' | 'gameplay' 
 @Component({
   selector: 'app-game-page',
   standalone: true,
-  imports: [AsyncPipe, NgIf, NgForOf, DatePipe, FormsModule, RouterLink, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent, GameResultPanelComponent, BotSetupComponent, MultiplayerLobbyComponent, ChessArenaAnimationComponent],
+  imports: [AsyncPipe, NgIf, NgForOf, NgTemplateOutlet, DatePipe, FormsModule, RouterLink, BoardComponent, MoveHistoryComponent, GameControlsComponent, AnalysisPanelComponent, GameResultPanelComponent, BotSetupComponent, MultiplayerLobbyComponent, ChessArenaAnimationComponent],
   templateUrl: './game.page.html',
   styleUrl: './game.page.css'
 })
@@ -97,6 +97,8 @@ export class GamePageComponent {
   analysisEnabled = true;
   evalHistory: number[] = [];
   onlineMode = false;
+  onlineLobbyPanelTemplate: TemplateRef<unknown> | null = null;
+  onlineLobbyPanelView: LobbyView | null = null;
   chatMessage = '';
   private pendingOnlineAction: (() => void) | null = null;
   onlineUsername = '';
@@ -143,6 +145,8 @@ export class GamePageComponent {
       arenaPreview: 'Arena preview',
       host: 'Host',
       noPublicRooms: 'No public rooms yet.',
+      roomOpen: 'Open',
+      roomUnavailable: 'Unavailable',
       spectate: 'Spectate',
       inviteCreated: 'Room created',
       deleteRoom: 'Delete room',
@@ -158,6 +162,7 @@ export class GamePageComponent {
       removePlayer: 'Remove',
       chatTitle: 'Room chat',
       chatEmpty: 'No messages yet. Start the conversation.',
+      chatJoinRoom: 'Join or create a room to start chatting.',
       chatPlaceholder: 'Type a message...',
       send: 'Send',
       spectator: 'Spectator',
@@ -288,6 +293,8 @@ export class GamePageComponent {
       arenaPreview: 'Podglad Areny',
       host: 'Gospodarz',
       noPublicRooms: 'Brak publicznych pokoi.',
+      roomOpen: 'Otwarty',
+      roomUnavailable: 'Niedostępny',
       spectate: 'Ogladaj',
       inviteCreated: 'Pokoj utworzony',
       deleteRoom: 'Usun pokoj',
@@ -303,6 +310,7 @@ export class GamePageComponent {
       removePlayer: 'Usun',
       chatTitle: 'Czat pokoju',
       chatEmpty: 'Brak wiadomosci. Rozpocznij rozmowe.',
+      chatJoinRoom: 'Dołącz do pokoju lub utwórz własny, aby porozmawiać.',
       chatPlaceholder: 'Napisz wiadomosc...',
       send: 'Wyslij',
       spectator: 'Widz',
@@ -1213,6 +1221,15 @@ export class GamePageComponent {
     return this.translations[this.lang][key];
   }
 
+  onLobbyPanelContentReady(template: TemplateRef<unknown>) {
+    this.onlineLobbyPanelTemplate = template;
+    this.onlineLobbyPanelView = null;
+  }
+
+  onLobbyPanelViewChange(view: LobbyView | null) {
+    this.onlineLobbyPanelView = view;
+  }
+
   multiplayerGameActive() {
     return this.onlineMode && !!this.multiplayer.gameState$.value?.gameId;
   }
@@ -1240,7 +1257,9 @@ export class GamePageComponent {
   }
 
   showOnlineBoardStatus() {
-    return this.multiplayer.connectionState$.value !== 'READY'
+    const connection = this.multiplayer.connectionState$.value;
+    return connection === 'ERROR'
+      || (!!this.multiplayer.gameState$.value?.gameId && connection !== 'READY')
       || this.multiplayer.queueState$.value === 'QUEUED'
       || !!this.multiplayer.activeRoomCode$.value;
   }
@@ -1337,6 +1356,12 @@ export class GamePageComponent {
     return this.onlineMode && !this.multiplayer.yourColor$.value && !!this.multiplayer.gameState$.value?.gameId;
   }
 
+  canUseMultiplayerActions() {
+    const game = this.multiplayer.gameState$.value;
+    const color = this.multiplayer.yourColor$.value;
+    return this.onlineMode && game?.result === 'ONGOING' && (color === 'WHITE' || color === 'BLACK');
+  }
+
   colorLabel(color: 'w' | 'b') {
     return color === 'w' ? this.t('white') : this.t('black');
   }
@@ -1428,7 +1453,7 @@ export class GamePageComponent {
   sendChatMessage() {
     const roomCode = this.multiplayer.activeRoomCode$.value;
     const text = this.chatMessage.trim();
-    if (!roomCode || !text) {
+    if (!roomCode || !text || this.multiplayer.connectionState$.value !== 'READY') {
       return;
     }
     this.multiplayer.sendRoomMessage(roomCode, text);

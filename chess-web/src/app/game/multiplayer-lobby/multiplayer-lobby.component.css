@@ -6,11 +6,12 @@
 .online-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
-.online-controls label {
+.online-controls label,
+.online-panel-content label {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -19,11 +20,13 @@
 }
 
 .online-controls input,
-.online-controls select {
+.online-controls select,
+.online-panel-content input,
+.online-panel-content select {
   box-sizing: border-box;
   font: inherit;
   width: 100%;
-  min-height: 40px;
+  min-height: 36px;
   border-radius: var(--arena-radius-control);
   border: 1px solid var(--arena-control-border);
   background: var(--arena-control);
@@ -32,7 +35,7 @@
 }
 
 .online-controls .arena-button,
-.room-row .arena-button,
+.room-tile .arena-button,
 .room-list-header .arena-button,
 .invite-box .arena-button {
   white-space: nowrap;
@@ -45,7 +48,7 @@
   gap: 12px;
   align-items: center;
   min-width: 0;
-  padding-bottom: 10px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--arena-border-subtle);
 }
 
@@ -87,6 +90,7 @@
 
 .lobby-tabs button {
   flex: 1;
+  min-width: 0;
   background: var(--arena-control);
   border: 1px solid var(--arena-control-border);
   color: var(--arena-text);
@@ -101,6 +105,12 @@
   background: linear-gradient(140deg, var(--arena-accent), var(--arena-accent-strong));
   color: var(--arena-accent-ink);
   border-color: var(--arena-accent);
+}
+
+.lobby-tabs button:not(.active):hover {
+  border-color: rgba(113, 204, 163, .58);
+  background: rgba(31, 159, 118, .12);
+  color: var(--arena-text-strong);
 }
 
 .lobby-actions {
@@ -138,7 +148,14 @@
   min-width: 0;
   align-self: center;
   color: var(--arena-muted);
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.online-player-actions {
+  display: grid;
+  align-content: end;
+  min-width: 0;
+  gap: 5px;
 }
 
 .online-player-status strong {
@@ -148,31 +165,58 @@
 }
 
 .online-quick-actions {
-  grid-column: 1 / -1;
   display: flex;
   gap: 8px;
 }
 
 .online-quick-actions .arena-button {
-  min-width: 132px;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 12px;
 }
 
 .room-list {
   grid-column: 1 / -1;
   display: grid;
-  gap: 10px;
-  margin-top: 6px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(35, 60, 70, 0.35);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.room-list-results {
+.room-list .lobby-toggle { grid-column: 1 / -1; }
+
+.online-panel-content.public-panel-content {
+  height: 100%;
+  min-height: 0;
+  align-content: stretch;
+}
+
+.public-lobby {
   display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.room-browser {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
   gap: 8px;
-  max-height: clamp(112px, calc(100dvh - 560px), 300px);
+  align-content: start;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding-right: 3px;
+  scrollbar-width: thin;
+  padding: 2px 4px 2px 0;
 }
 
 .room-list-header {
@@ -185,26 +229,61 @@
   letter-spacing: 0.4px;
 }
 
-.room-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+.room-list-header .arena-button {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.room-tile {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: 6px;
+  padding: 8px;
   border-radius: 12px;
-  border: 1px solid rgba(40, 60, 80, 0.6);
-  background: rgba(8, 14, 20, 0.65);
+  border: 1px solid var(--arena-border-subtle);
+  background: var(--arena-control);
+}
+
+.room-tile:hover,
+.room-tile.current-room { border-color: var(--arena-accent); }
+
+.room-tile-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.room-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: rgba(31, 159, 118, .16);
+  color: var(--arena-accent);
+  font-size: 20px;
 }
 
 .room-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: stretch;
 }
 
-.room-row button[disabled] {
+.room-tile .room-actions .arena-button {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.room-tile button[disabled] {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -295,23 +374,34 @@
   font-weight: 700;
   font-size: 13px;
   color: #e6ebf2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .room-meta {
-  font-size: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 10px;
   color: #9ca8bb;
 }
 
+.room-status { color: var(--arena-accent); }
+.room-status.in-game { color: var(--arena-muted); }
+
 .room-empty {
+  grid-column: 1 / -1;
   font-size: 12px;
   color: #9ca8bb;
   padding: 6px 4px;
 }
 
-.lobby-toggle {
+.online-panel-content .lobby-toggle {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-direction: row;
   gap: 10px;
   padding: 10px 12px;
   border-radius: 12px;
@@ -322,6 +412,7 @@
 .lobby-toggle input[type='checkbox'] {
   width: 18px;
   height: 18px;
+  min-height: 18px;
 }
 
 .ghost {
@@ -355,10 +446,36 @@
   font-size: 12px;
 }
 
+.online-panel-content {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+@media (min-width: 961px) {
+  .connection-status-banner {
+    box-sizing: border-box;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    padding: 4px 8px;
+  }
+
+  .connection-status-banner button {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+}
+
 @media (max-width: 600px) {
   .online-controls {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .room-list { grid-template-columns: minmax(0, 1fr); }
 
   .setup-header {
     grid-template-columns: minmax(0, 1fr);
@@ -369,14 +486,6 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .room-row {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .room-actions {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 500px) {

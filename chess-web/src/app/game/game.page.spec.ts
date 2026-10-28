@@ -49,6 +49,61 @@ function page() {
   return component;
 }
 
+describe('room chat readiness', () => {
+  it.each([
+    { roomCode: null, connection: 'READY' },
+    { roomCode: 'ROOM1', connection: 'RECONNECTING' }
+  ])('keeps the draft when sending is unavailable: $roomCode / $connection', ({ roomCode, connection }) => {
+    const component = page();
+    const multiplayer = (component as any).multiplayer;
+    multiplayer.activeRoomCode$.value = roomCode;
+    multiplayer.connectionState$.value = connection;
+    multiplayer.sendRoomMessage = vi.fn();
+    component.chatMessage = 'Hello';
+
+    component.sendChatMessage();
+
+    expect(multiplayer.sendRoomMessage).not.toHaveBeenCalled();
+    expect(component.chatMessage).toBe('Hello');
+  });
+
+  it('sends to the authoritative active room and clears the submitted draft', () => {
+    const component = page();
+    const multiplayer = (component as any).multiplayer;
+    multiplayer.activeRoomCode$.value = 'ROOM1';
+    multiplayer.sendRoomMessage = vi.fn();
+    component.chatMessage = '  Hello  ';
+
+    component.sendChatMessage();
+
+    expect(multiplayer.sendRoomMessage).toHaveBeenCalledExactlyOnceWith('ROOM1', 'Hello');
+    expect(component.chatMessage).toBe('');
+  });
+});
+
+describe('multiplayer player action permissions', () => {
+  it.each(['WHITE', 'BLACK'])('offers active player actions to %s', color => {
+    const component = page();
+    component.onlineMode = true;
+    const multiplayer = (component as any).multiplayer;
+    multiplayer.gameState$.value = { gameId: 'playing', result: 'ONGOING' };
+    multiplayer.yourColor$.value = color;
+    expect(component.canUseMultiplayerActions()).toBe(true);
+  });
+
+  it('withholds player actions from spectators and completed games', () => {
+    const component = page();
+    component.onlineMode = true;
+    const multiplayer = (component as any).multiplayer;
+    multiplayer.gameState$.value = { gameId: 'playing', result: 'ONGOING' };
+    multiplayer.yourColor$.value = null;
+    expect(component.canUseMultiplayerActions()).toBe(false);
+    multiplayer.yourColor$.value = 'WHITE';
+    multiplayer.gameState$.value.result = 'DRAW';
+    expect(component.canUseMultiplayerActions()).toBe(false);
+  });
+});
+
 describe('bot board and color regression', () => {
   it('disconnects from an active online game without abandoning recoverable state', () => {
     const component = page();
@@ -80,7 +135,7 @@ describe('bot board and color regression', () => {
     expect(multiplayer.leaveGame).not.toHaveBeenCalled();
   });
 
-  it('hides the duplicate idle Connected row but keeps actionable multiplayer status', () => {
+  it('hides passive lobby connection status and keeps actionable or active-game status', () => {
     const component = page();
     component.onlineMode = true;
     const multiplayer = (component as any).multiplayer;
@@ -92,7 +147,14 @@ describe('bot board and color regression', () => {
     multiplayer.activeRoomCode$.value = 'PRIV01';
     expect(component.showOnlineBoardStatus()).toBe(true);
     multiplayer.activeRoomCode$.value = null;
-    multiplayer.connectionState$.value = 'RECONNECTING';
+    for (const connection of ['CONNECTING', 'AUTHENTICATING', 'RECONNECTING', 'RECOVERING_GAME']) {
+      multiplayer.connectionState$.value = connection;
+      expect(component.showOnlineBoardStatus()).toBe(false);
+    }
+    multiplayer.gameState$.value = { gameId: 'recovering-game' };
+    expect(component.showOnlineBoardStatus()).toBe(true);
+    multiplayer.gameState$.value = null;
+    multiplayer.connectionState$.value = 'ERROR';
     expect(component.showOnlineBoardStatus()).toBe(true);
     multiplayer.connectionState$.value = 'READY';
     expect(component.showOnlineBoardStatus()).toBe(false);

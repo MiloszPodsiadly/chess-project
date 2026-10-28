@@ -2,12 +2,34 @@ import { describe, expect, it, vi } from 'vitest';
 import { MultiplayerLobbyComponent } from './multiplayer-lobby.component';
 
 function lobby(translations: Readonly<Record<string, string>>) {
-  const component = Object.create(MultiplayerLobbyComponent.prototype) as MultiplayerLobbyComponent;
+  const component = new MultiplayerLobbyComponent({ clearLastError: vi.fn() } as any);
   component.translations = translations;
   return component;
 }
 
 describe('MultiplayerLobbyComponent', () => {
+  it('keeps the Arena visible by default without selecting a lobby tab', () => {
+    const component = lobby({});
+
+    expect(component.onlineView).toBeNull();
+    expect(component.tabIndexFor('public')).toBe(0);
+    expect(component.tabIndexFor('create')).toBe(-1);
+  });
+
+  it('opens a lobby panel on selection and closes it when the selected tab is clicked again', () => {
+    const component = lobby({});
+    const panelViewChange = vi.fn();
+    component.panelViewChange = { emit: panelViewChange } as any;
+
+    component.setOnlineView('public');
+    expect(component.onlineView).toBe('public');
+    expect(panelViewChange).toHaveBeenLastCalledWith('public');
+
+    component.setOnlineView('public');
+    expect(component.onlineView).toBeNull();
+    expect(panelViewChange).toHaveBeenLastCalledWith(null);
+  });
+
   it('explains when an unverifiable recovered snapshot leaves the current board untouched', () => {
     const component = lobby({ snapshotRecoveryFailed: 'Your current board was kept.' });
 

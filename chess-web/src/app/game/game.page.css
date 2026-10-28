@@ -86,16 +86,21 @@
   min-height: calc(100vh - 24px);
 }
 
+.game-shell.bot-mode,
 .game-shell.online-mode {
   min-height: 100dvh;
   padding: 12px 18px;
 }
 
 .game-shell.online-mode .game-grid {
+  margin-top: 0;
+}
+
+.game-shell.bot-mode .game-grid,
+.game-shell.online-mode .game-grid {
   height: calc(100dvh - 24px);
   min-height: calc(100dvh - 24px);
-  margin-top: 0;
-  grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(370px, 0.8fr);
   gap: 16px;
   align-items: stretch;
 }
@@ -106,6 +111,13 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
+.game-shell.bot-mode .left-panel {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.game-shell.bot-mode .board-card,
 .game-shell.online-mode .board-card {
   box-sizing: border-box;
   height: 100%;
@@ -178,7 +190,7 @@
 .right-panel.online-layout {
   grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
-  grid-auto-rows: auto;
+  grid-auto-rows: max-content;
   height: calc(100dvh - 24px);
   max-height: calc(100dvh - 24px);
   align-content: start;
@@ -199,6 +211,10 @@
   align-self: stretch;
   display: flex;
   flex-direction: column;
+}
+
+.right-panel.online-layout .settings-card {
+  min-height: max-content;
 }
 
 .right-panel.online-layout .online-actions-card {
@@ -297,6 +313,24 @@
   background: var(--arena-warning);
 }
 
+@media (min-width: 961px) {
+  .game-shell.bot-mode .right-panel {
+    height: calc(100dvh - 24px);
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .game-shell.online-mode .board-card.online-board-with-status .online-board-status {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    margin-top: 0;
+    z-index: 1;
+  }
+}
+
 .online-status-dot.ready { background: var(--arena-success); }
 .online-board-room { color: var(--arena-text); }
 .online-board-queue { color: var(--arena-accent); font-weight: 700; }
@@ -307,12 +341,10 @@
 }
 
 .game-shell.bot-mode .game-grid {
-  min-height: 0;
-  grid-template-columns: minmax(0, 1.2fr) minmax(370px, 0.8fr);
+  margin-top: 0;
 }
 
-.game-shell.bot-mode .left-panel { min-height: 0; height: auto; }
-.game-shell.bot-mode .board-card { height: auto; }
+.game-shell.bot-mode .left-panel { min-height: 0; }
 .game-shell.bot-mode .board-shell { align-items: center; }
 .setup-phase .settings-card { padding: 10px; }
 
@@ -357,7 +389,42 @@
   font-size: 12px;
 }
 
-.room-preview { gap: 12px; }
+.room-chat { display: grid; gap: 12px; min-width: 0; }
+
+.room-chat--embedded {
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--arena-border-subtle);
+}
+
+.room-chat--embedded .card-header { margin: 0; }
+
+.room-chat--embedded h2 { font-size: 14px; }
+
+.room-chat--embedded .empty-chat-state.compact {
+  box-sizing: border-box;
+  min-height: 0;
+}
+
+.room-chat--embedded .chat-input input,
+.room-chat--embedded .chat-input .arena-button {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.room-chat--embedded .chat-messages {
+  min-height: 0;
+  max-height: none;
+  align-content: start;
+  overscroll-behavior: contain;
+}
+
+.room-chat--embedded .chat-input { margin-top: 0; }
+
+.room-chat .chat-input :disabled { opacity: .5; cursor: not-allowed; }
 
 .empty-chat-state {
   display: grid;
@@ -400,6 +467,8 @@
 
 .chat-text {
   color: #dfe6f3;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .chat-time {
@@ -500,6 +569,27 @@
 .online-arena-stage {
   min-width: 0;
   width: 100%;
+}
+
+.online-lobby-panel {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 380px;
+  aspect-ratio: 950 / 620;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border: 1px solid var(--arena-card-border);
+  border-radius: var(--arena-radius-card);
+  background: var(--arena-card);
+  box-shadow: var(--arena-shadow-card);
+}
+
+.online-lobby-panel.public-rooms-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 480px;
+  overflow: hidden;
 }
 
 .arena-placeholder {
@@ -696,18 +786,55 @@
   align-items: center;
 }
 
-@media (max-width: 1250px) {
-  .right-panel.online-layout {
-    grid-template-columns: minmax(0, 1fr);
+@media (min-width: 961px) {
+  .right-panel.online-layout.online-lobby-layout {
+    box-sizing: border-box;
+    padding-bottom: 40px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    overflow: visible;
+    scrollbar-gutter: auto;
   }
 
-  .game-shell.no-header .right-panel.online-layout {
-    height: auto;
+  .right-panel.online-layout.online-lobby-layout:has(> .room-chat) {
+    grid-template-rows: auto minmax(0, 1fr) auto minmax(130px, .6fr);
+  }
+
+  .online-lobby-layout .online-arena-stage {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
     min-height: 0;
   }
+
+  .online-lobby-layout .online-lobby-panel {
+    height: 100%;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+
+  .online-lobby-layout .arena-placeholder { height: 100%; aspect-ratio: auto; }
+  .online-lobby-layout .settings-card { padding: 10px 12px; overflow: visible; }
+
+  .online-lobby-layout > .room-chat {
+    min-height: 0;
+    padding: 10px 12px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .online-lobby-layout > .room-chat .card-header { margin: 0; }
+  .online-lobby-layout > .room-chat h2 { font-size: 14px; }
+  .online-lobby-layout > .room-chat .chat-messages { min-height: 0; max-height: none; }
+  .online-lobby-layout > .room-chat .empty-chat-state.compact { min-height: 0; }
+  .online-lobby-layout > .room-chat .chat-input { margin-top: 0; }
+  .online-lobby-layout > .room-chat .chat-input input,
+  .online-lobby-layout > .room-chat .chat-input .arena-button { min-height: 34px; padding: 6px 10px; font-size: 12px; }
 }
 
 @media (max-width: 960px) {
+  .game-shell.bot-mode,
+  .game-shell.online-mode { padding: 12px; }
+
   .game-grid {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -715,8 +842,13 @@
   }
 
   .game-shell.bot-mode .game-grid {
+    height: auto;
+    min-height: 0;
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .game-shell.bot-mode .left-panel { height: auto; }
+  .game-shell.bot-mode .board-card { height: auto; }
 
   .right-panel {
     grid-template-columns: 1fr;
@@ -745,6 +877,10 @@
     min-height: 0;
     overflow: visible;
     scrollbar-gutter: auto;
+  }
+
+  .online-lobby-panel {
+    min-height: 360px;
   }
 
 }
@@ -777,6 +913,7 @@
 }
 
 @media (max-width: 600px) {
+  .game-shell.bot-mode,
   .game-shell.online-mode { padding: 8px; }
   .game-shell.online-mode .game-grid { gap: 10px; }
   .online-board-status { font-size: 11px; }

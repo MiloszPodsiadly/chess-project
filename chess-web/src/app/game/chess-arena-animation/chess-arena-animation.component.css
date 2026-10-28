@@ -35,6 +35,11 @@
 :host([data-variant="LOBBY"]) .arena-kicker { top: 6%; font-size: 10px; }
 :host([data-variant="COMPACT"]) .arena-art { aspect-ratio: 840 / 450; }
 :host([data-variant="COMPACT"]) .arena-kicker { display: none; }
+@media (min-width: 961px) {
+  :host(.arena-fit-stage) { height: 100%; min-height: 0; }
+  :host(.arena-fit-stage) .arena-animation { box-sizing: border-box; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+  :host(.arena-fit-stage) .arena-art { aspect-ratio: auto; min-height: 0; }
+}
 @keyframes chamber-reveal { from { opacity: .45; } to { opacity: 1; } }
 @keyframes grid-awaken { from { stroke-opacity: .05; opacity: .65; } to { stroke-opacity: 1; opacity: 1; } }
 @keyframes pieces-awaken { from { opacity: .2; transform: translateY(-9px); } to { opacity: 1; transform: translateY(0); } }

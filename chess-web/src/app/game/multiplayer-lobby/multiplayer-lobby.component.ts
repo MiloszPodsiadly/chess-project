@@ -1,5 +1,5 @@
-import { AsyncPipe, NgForOf, NgIf } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { AsyncPipe, NgForOf, NgIf, NgTemplateOutlet } from '@angular/common';
+import { Component, EventEmitter, Input, OnInit, Output, TemplateRef, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MultiplayerService } from '../../multiplayer/multiplayer.service';
 import type { PublicRoomDto, RoomParticipantDto, TimeControlType } from '../../multiplayer/models';
@@ -16,7 +16,7 @@ export interface LobbyJoinRoomRequest {
   password: string | null;
 }
 
-type LobbyView = 'public' | 'create' | 'join' | 'manage';
+export type LobbyView = 'public' | 'create' | 'join' | 'manage';
 
 const ONLINE_ERROR_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   room_not_found: 'roomNotFoundError',
@@ -66,11 +66,11 @@ const ONLINE_ERROR_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
 @Component({
   selector: 'app-multiplayer-lobby',
   standalone: true,
-  imports: [AsyncPipe, NgForOf, NgIf, FormsModule],
+  imports: [AsyncPipe, NgForOf, NgIf, NgTemplateOutlet, FormsModule],
   templateUrl: './multiplayer-lobby.component.html',
   styleUrl: './multiplayer-lobby.component.css'
 })
-export class MultiplayerLobbyComponent {
+export class MultiplayerLobbyComponent implements OnInit {
   @Input({ required: true }) translations: Readonly<Record<string, string>> = {};
   @Input() username = '';
   @Input() connectionLabel = '';
@@ -81,8 +81,12 @@ export class MultiplayerLobbyComponent {
   @Output() createRequested = new EventEmitter<LobbyCreateRoomRequest>();
   @Output() joinRequested = new EventEmitter<LobbyJoinRoomRequest>();
   @Output() startRequested = new EventEmitter<string>();
+  @Output() panelContentReady = new EventEmitter<TemplateRef<unknown>>();
+  @Output() panelViewChange = new EventEmitter<LobbyView | null>();
 
-  onlineView: LobbyView = 'public';
+  @ViewChild('panelContent', { static: true }) panelContent!: TemplateRef<unknown>;
+
+  onlineView: LobbyView | null = null;
   onlineRoomName = '';
   onlineRoomPassword = '';
   onlineJoinPassword = '';
@@ -92,18 +96,29 @@ export class MultiplayerLobbyComponent {
 
   constructor(public readonly multiplayer: MultiplayerService) {}
 
+  ngOnInit() {
+    this.panelContentReady.emit(this.panelContent);
+  }
+
   t(key: string): string {
     return this.translations[key] ?? key;
   }
 
   setOnlineView(view: LobbyView) {
-    this.onlineView = view;
+    this.onlineView = this.onlineView === view ? null : view;
     this.multiplayer.clearLastError();
+    this.panelViewChange.emit(this.onlineView);
+  }
+
+  tabIndexFor(view: LobbyView): number {
+    return this.onlineView === view || (this.onlineView === null && view === 'public') ? 0 : -1;
   }
 
   onTabKeydown(event: KeyboardEvent) {
     const tabs: LobbyView[] = ['public', 'create', 'join', 'manage'];
-    const index = tabs.indexOf(this.onlineView);
+    const buttons = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const focusedIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const index = this.onlineView ? tabs.indexOf(this.onlineView) : Math.max(focusedIndex, 0);
     const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
       : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
       : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
