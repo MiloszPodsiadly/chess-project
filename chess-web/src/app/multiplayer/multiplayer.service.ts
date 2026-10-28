@@ -763,7 +763,8 @@ export class MultiplayerService {
       this.clearActiveRoom();
     }
     this.timeControl$.next(state.timeControlType ?? this.timeControl$.value);
-    if (snapshotDecision === 'APPLY') {
+    const shouldReapplyRecoveredSnapshot = snapshotDecision === 'DUPLICATE' && this.awaitingRecoverySnapshot;
+    if (snapshotDecision === 'APPLY' || shouldReapplyRecoveredSnapshot) {
       this.gameState$.next(state);
     }
     this.resetAuthoritativeResync(state.gameId);

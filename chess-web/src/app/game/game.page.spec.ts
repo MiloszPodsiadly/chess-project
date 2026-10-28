@@ -19,6 +19,8 @@ function page() {
   component.multiplayerReviewedGameId = null;
   component.multiplayerReplay = null;
   component.multiplayerReplayError = false;
+  (component as any).onlineAutoConnected = false;
+  (component as any).destroyed = false;
   (component as any).state = {
     sideToMove$: { value: 'w' }, fen$: { value: 'start' }, selectedSquare$,
     positionStatus$: { value: 'NORMAL' },
@@ -38,7 +40,7 @@ function page() {
     gameState$: { value: null }, yourColor$: { value: 'WHITE' },
     queueState$: { value: 'IDLE' }, matchFound$: { value: false },
     activeRoomCode$: { value: null },
-    opponentDisconnected$: { value: false }, makeMove: vi.fn(),
+    opponentDisconnected$: { value: false }, makeMove: vi.fn(), connect: vi.fn(), listRooms: vi.fn(),
     leaveGame: vi.fn(), leaveRoom: vi.fn(), disconnect: vi.fn(), clearLastError: vi.fn()
   };
   (component as any).engineApi = { authenticated: false };
@@ -54,6 +56,7 @@ describe('bot board and color regression', () => {
     const multiplayer = (component as any).multiplayer;
     multiplayer.connected$.value = true;
     multiplayer.gameState$.value = game;
+    (component as any).onlineAutoConnected = true;
 
     (component as any).disconnectOnlineSession();
 
@@ -61,6 +64,7 @@ describe('bot board and color regression', () => {
     expect(multiplayer.leaveGame).not.toHaveBeenCalled();
     expect(multiplayer.leaveRoom).not.toHaveBeenCalled();
     expect(multiplayer.gameState$.value).toBe(game);
+    expect((component as any).onlineAutoConnected).toBe(false);
   });
 
   it('leaves a lobby room when exiting without an ongoing game', () => {
@@ -141,6 +145,82 @@ describe('bot board and color regression', () => {
 
     (component as any).multiplayer.connectionState$.value = 'RECONNECTING';
     expect(component.canHumanMove()).toBe(false);
+  });
+
+  it('reconnects after a deliberate disconnect and avoids duplicate connection attempts', () => {
+    const component = page();
+    const multiplayer = (component as any).multiplayer;
+    component.onlineMode = true;
+    multiplayer.connected$.value = true;
+    multiplayer.gameState$.value = { gameId: 'online', result: 'ONGOING' };
+    (component as any).onlineAutoConnected = true;
+
+    (component as any).disconnectOnlineSession();
+    multiplayer.connected$.value = false;
+    (component as any).ensureOnlineConnected();
+    (component as any).ensureOnlineConnected();
+
+    expect(multiplayer.connect).toHaveBeenCalledOnce();
+    expect(multiplayer.listRooms).toHaveBeenCalledOnce();
+    expect((component as any).onlineAutoConnected).toBe(true);
+  });
+
+  it('does not connect while outside online mode or after the component is destroyed', () => {
+    const component = page();
+    const multiplayer = (component as any).multiplayer;
+
+    (component as any).ensureOnlineConnected();
+    component.onlineMode = true;
+    (component as any).destroyed = true;
+    (component as any).ensureOnlineConnected();
+
+    expect(multiplayer.connect).not.toHaveBeenCalled();
+    expect(multiplayer.listRooms).not.toHaveBeenCalled();
+    expect((component as any).onlineAutoConnected).toBe(false);
+  });
+
+  it('restores the retained authoritative snapshot over the bot board', () => {
+    const component = page();
+    const chess = new Chess();
+    chess.move('e4');
+    chess.move('e5');
+    const game = {
+      gameId: 'online-game', fen: chess.fen(), sideToMove: 'WHITE', result: 'ONGOING', endReason: 'NONE',
+      moves: chess.history({ verbose: true }).map(move => ({
+        from: move.from, to: move.to, promotion: move.promotion ?? null,
+        playerColor: move.color === 'w' ? 'WHITE' : 'BLACK'
+      })), whiteTimeLeftMs: 310000, blackTimeLeftMs: 320000, version: 2
+    } as any;
+    const loadedMoves = [{ san: 'e4', from: 'e2', to: 'e4' }, { san: 'e5', from: 'e7', to: 'e5' }];
+    const state = (component as any).state;
+    state.fen$.value = new Chess().fen();
+    state.loadExternalState.mockImplementation((fen: string) => {
+      state.fen$.value = fen;
+      return loadedMoves;
+    });
+    (component as any).multiplayer.gameState$.value = game;
+
+    (component as any).restoreMultiplayerBoardFromSnapshot();
+
+    expect(state.loadExternalState).toHaveBeenCalledWith(game.fen, game.moves, 'w');
+    expect(state.fen$.value).toBe(game.fen);
+    expect(component.multiplayerHistoryMoves).toEqual(loadedMoves);
+  });
+
+  it('keeps the retained multiplayer board non-interactive after reconnect failure', () => {
+    const component = page();
+    component.botMode = false;
+    component.onlineMode = true;
+    (component as any).multiplayer.gameState$.value = {
+      gameId: 'online', result: 'ONGOING', sideToMove: 'WHITE'
+    };
+    (component as any).multiplayer.connectionState$.value = 'ERROR';
+
+    component.onSquareClick('e2');
+
+    expect(component.canHumanMove()).toBe(false);
+    expect((component as any).state.selectSquare).not.toHaveBeenCalled();
+    expect((component as any).multiplayer.gameState$.value.gameId).toBe('online');
   });
 
   it('clears analysis and never starts or applies engine hints for multiplayer state', () => {

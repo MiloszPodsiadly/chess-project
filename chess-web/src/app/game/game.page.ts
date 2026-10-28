@@ -14,7 +14,7 @@ import { BotEngineService } from '../bot/bot-engine.service';
 import { EngineGameApiService, EngineSessionExpiredError, ServerEngineGame, ServerEngineMode, StrengthPreset } from '../bot/engine-game-api.service';
 import { Chess } from 'chess.js';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import type { TimeControlType } from '../multiplayer/models';
+import type { GameStateSyncDto, TimeControlType } from '../multiplayer/models';
 import { strengthCategory } from '../bot/strength-catalog';
 import { GameOutcome, multiplayerOutcome as toMultiplayerOutcome, serverOutcome } from './game-outcome';
 import { GameResultPanelComponent } from './game-result-panel/game-result-panel.component';
@@ -421,6 +421,7 @@ export class GamePageComponent {
     this.botExecution = this.engineApi.authenticated ? 'server' : 'browser';
     destroyRef.onDestroy(() => {
       this.destroyed = true;
+      if (this.onlineMode) this.disconnectOnlineSession();
       this.invalidateBotSession();
       this.analysis.stop();
       window.removeEventListener('storage', this.onStorageChange);
@@ -467,32 +468,7 @@ export class GamePageComponent {
 
     this.multiplayer.gameState$
       .pipe(takeUntilDestroyed(destroyRef))
-      .subscribe((game) => {
-        if (!game) {
-          this.pendingServerMove = false;
-          this.multiplayerHistoryMoves = [];
-          this.multiplayerReviewedGameId = null;
-          this.multiplayerReplay = null;
-          this.multiplayerReplayError = false;
-          return;
-        }
-        if (this.multiplayerReviewedGameId && this.multiplayerReviewedGameId !== game.gameId) {
-          this.multiplayerReviewedGameId = null;
-          this.multiplayerReplay = null;
-          this.multiplayerReplayError = false;
-        }
-        this.multiplayerHistoryMoves = [];
-        try {
-          this.multiplayerHistoryMoves = this.state.loadExternalState(game.fen, game.moves,
-            game.sideToMove === 'WHITE' ? 'w' : 'b');
-        } catch (error) {
-          this.state.status$.next(error instanceof Error ? error.message : 'Invalid game history');
-          return;
-        }
-        this.pendingPromotion = null;
-        this.pendingServerMove = false;
-        this.clearMultiplayerAnalysis();
-      });
+      .subscribe((game) => this.applyMultiplayerGameState(game));
 
     this.multiplayer.ready$
       .pipe(takeUntilDestroyed(destroyRef))
@@ -574,6 +550,7 @@ export class GamePageComponent {
         this.onlineMode = mode === 'online';
         if (this.onlineMode) {
           this.loadOnlineDefaults();
+          this.restoreMultiplayerBoardFromSnapshot();
         }
         if (this.botMode) {
           this.botErrorState = null;
@@ -887,6 +864,7 @@ export class GamePageComponent {
       this.multiplayer.leaveRoom();
       this.multiplayer.disconnect();
     }
+    this.onlineAutoConnected = false;
     this.multiplayer.clearLastError();
   }
 
@@ -1020,6 +998,7 @@ export class GamePageComponent {
   }
 
   private ensureOnlineConnected() {
+    if (!this.onlineMode || this.destroyed) return;
     if (this.onlineAutoConnected) {
       return;
     }
@@ -1030,6 +1009,38 @@ export class GamePageComponent {
     }
     this.onlineAutoConnected = true;
     this.connectOnline();
+  }
+
+  private restoreMultiplayerBoardFromSnapshot() {
+    const snapshot = this.multiplayer.gameState$.value;
+    if (snapshot) this.applyMultiplayerGameState(snapshot);
+  }
+
+  private applyMultiplayerGameState(game: GameStateSyncDto | null) {
+    if (!game) {
+      this.pendingServerMove = false;
+      this.multiplayerHistoryMoves = [];
+      this.multiplayerReviewedGameId = null;
+      this.multiplayerReplay = null;
+      this.multiplayerReplayError = false;
+      return;
+    }
+    if (this.multiplayerReviewedGameId && this.multiplayerReviewedGameId !== game.gameId) {
+      this.multiplayerReviewedGameId = null;
+      this.multiplayerReplay = null;
+      this.multiplayerReplayError = false;
+    }
+    this.multiplayerHistoryMoves = [];
+    try {
+      this.multiplayerHistoryMoves = this.state.loadExternalState(game.fen, game.moves,
+        game.sideToMove === 'WHITE' ? 'w' : 'b');
+    } catch (error) {
+      this.state.status$.next(error instanceof Error ? error.message : 'Invalid game history');
+      return;
+    }
+    this.pendingPromotion = null;
+    this.pendingServerMove = false;
+    this.clearMultiplayerAnalysis();
   }
 
   private loadOnlineDefaults() {

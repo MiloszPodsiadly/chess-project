@@ -33,6 +33,7 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
   const contexts = [];
   const clients = [];
   const pageErrors = [];
+  let socketSequence = 0;
   let roomCreated = false;
   let secondRoomCreated = false;
   let gameStarted = false;
@@ -46,8 +47,9 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     clients.push({ name, page, networkEvents });
     page.on('pageerror', (error) => pageErrors.push(`${name}: ${error.message}`));
     page.on('websocket', (socket) => {
-      socket.on('framesent', (frame) => networkEvents.push({ direction: 'sent', ...summarizeStompFrame(frame.payload) }));
-      socket.on('framereceived', (frame) => networkEvents.push({ direction: 'received', ...summarizeStompFrame(frame.payload) }));
+      const socketId = `${name}-socket-${++socketSequence}`;
+      socket.on('framesent', (frame) => networkEvents.push({ socketId, direction: 'sent', ...summarizeStompFrame(frame.payload) }));
+      socket.on('framereceived', (frame) => networkEvents.push({ socketId, direction: 'received', ...summarizeStompFrame(frame.payload) }));
     });
     await page.goto('/');
     await page.locator('.hero-actions').getByRole('link', { name: 'Play Online', exact: true }).click();
@@ -77,6 +79,20 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await page.getByRole('button', { name: to, exact: true }).click();
     await expect(page.locator(`app-board button.square.last-move[aria-label="${to}"]`)).toBeVisible();
   };
+
+  const navigateModeInPlace = async (page, mode) => {
+    await page.evaluate((nextMode) => {
+      const url = new URL(window.location.href);
+      url.searchParams.set('mode', nextMode);
+      const target = `${url.pathname}${url.search}${url.hash}`;
+      window.history.pushState(window.history.state, '', target);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
+    }, mode);
+    await expect(page).toHaveURL(new RegExp(`[?&]mode=${mode}(?:&|$)`));
+  };
+
+  const clockSeconds = (text) => text.trim().split(':').map(Number)
+    .reduce((total, part) => total * 60 + part, 0);
 
   try {
     const host = await openOnline(hostName);
@@ -185,15 +201,74 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
       await expect(page.getByRole('button', { name: 'e7', exact: true }).locator('img')).toHaveCount(0);
     }
 
-    await host.goBack();
-    await expect(host.locator('.hero-actions')).toBeVisible();
-    await host.locator('.hero-actions').getByRole('link', { name: 'Play vs Bot', exact: true }).click();
-    await expect(host).toHaveURL(/mode=bot/);
-    await host.locator('.play-mode-switcher').getByRole('link', { name: 'Multiplayer', exact: true }).click();
-    await expect(host).toHaveURL(/mode=online/);
+    const hostNetworkEvents = clients.find(client => client.name === hostName).networkEvents;
+    const hostGameSubscriptions = () => hostNetworkEvents.filter(event =>
+      event.direction === 'sent' && event.command === 'SUBSCRIBE'
+        && typeof event.destination === 'string' && event.destination.startsWith('/topic/game/')
+    );
+    await expect.poll(() => hostGameSubscriptions().length).toBe(1);
+    const gameTopic = hostGameSubscriptions()[0].destination;
+    const gameShell = host.locator('.game-shell');
+    await gameShell.evaluate(element => element.setAttribute('data-e2e-component-instance', 'preserved'));
+    const playerAndClockState = {
+      subtitle: await host.locator('.online-actions-card .card-subtitle').innerText(),
+      turn: await host.locator('.multiplayer-turn-status').innerText(),
+      clocks: await host.locator('.online-actions-card .player-clock').allInnerTexts()
+    };
+    expect(playerAndClockState.clocks).toHaveLength(2);
+    expect(playerAndClockState.clocks.every(value => Number.isFinite(clockSeconds(value)))).toBe(true);
+
+    // Change only the query parameter so Angular reuses the same GamePageComponent instance.
+    await navigateModeInPlace(host, 'bot');
+    await expect(gameShell).toHaveAttribute('data-e2e-component-instance', 'preserved');
+    const botSetup = host.locator('app-bot-setup');
+    await expect(botSetup).toBeVisible();
+    await botSetup.getByRole('button', { name: 'Black', exact: true }).click();
+    await botSetup.getByRole('button', { name: 'Start Game', exact: true }).click();
+    await expect(botSetup).toHaveCount(0);
+    await expect(host.locator('.bot-actions-card')).toBeVisible();
+
+    await navigateModeInPlace(host, 'online');
+    await expect(gameShell).toHaveAttribute('data-e2e-component-instance', 'preserved');
     await expect(host.locator('.online-actions-card')).toBeVisible({ timeout: 45_000 });
-    await expect(host.locator('.multiplayer-turn-status')).toContainText('Game in progress', { timeout: 45_000 });
+    await expect(host.locator('.multiplayer-turn-status')).toHaveText(playerAndClockState.turn, { timeout: 45_000 });
+    await expect(host.locator('.online-actions-card .card-subtitle')).toHaveText(playerAndClockState.subtitle);
     await expect(host.locator('app-board button.square.last-move[aria-label="e5"]')).toBeVisible();
+    await expect(host.locator('app-board button.square.last-move[aria-label="e7"]')).toBeVisible();
+    await expect(host.getByRole('button', { name: 'e4', exact: true }).locator('img')).toBeVisible();
+    await expect(host.getByRole('button', { name: 'e5', exact: true }).locator('img')).toBeVisible();
+    await expect(host.getByRole('button', { name: 'e2', exact: true }).locator('img')).toHaveCount(0);
+    await expect(host.getByRole('button', { name: 'e7', exact: true }).locator('img')).toHaveCount(0);
+    const recoveredClocks = await host.locator('.online-actions-card .player-clock').allInnerTexts();
+    expect(clockSeconds(recoveredClocks[0])).toBeLessThanOrEqual(clockSeconds(playerAndClockState.clocks[0]));
+    expect(clockSeconds(recoveredClocks[1])).toBe(clockSeconds(playerAndClockState.clocks[1]));
+
+    // Repeated same-component switches must reconnect once and subscribe once per socket.
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      await navigateModeInPlace(host, 'bot');
+      await expect(host.locator('app-bot-setup')).toBeVisible();
+      await navigateModeInPlace(host, 'online');
+      await expect(host.locator('.multiplayer-turn-status')).toHaveText(playerAndClockState.turn, { timeout: 45_000 });
+      await expect(host.locator('app-board button.square.last-move[aria-label="e5"]')).toBeVisible();
+      await expect.poll(() => hostGameSubscriptions().length).toBe(cycle + 3);
+    }
+    await expect.poll(() => hostNetworkEvents.filter(event =>
+      event.direction === 'received' && event.eventType === 'helloAck'
+    ).length).toBe(4);
+    const hostSocketIds = [...new Set(hostNetworkEvents
+      .filter(event => event.command === 'CONNECT')
+      .map(event => event.socketId))];
+    expect(hostSocketIds).toHaveLength(4);
+    for (const socketId of hostSocketIds) {
+      const events = hostNetworkEvents.filter(event => event.socketId === socketId);
+      const subscriptions = events.filter(event => event.direction === 'sent' && event.command === 'SUBSCRIBE')
+        .map(event => event.destination);
+      expect(subscriptions.length).toBe(new Set(subscriptions).size);
+      expect(events.filter(event => event.direction === 'sent' && event.command === 'CONNECT')).toHaveLength(1);
+      expect(events.filter(event => event.direction === 'received' && event.command === 'CONNECTED')).toHaveLength(1);
+      expect(events.filter(event => event.direction === 'received' && event.eventType === 'helloAck')).toHaveLength(1);
+    }
+    expect(hostGameSubscriptions().map(event => event.destination)).toEqual([gameTopic, gameTopic, gameTopic, gameTopic]);
 
     await guest.reload();
     await expect(guest.locator('.online-actions-card')).toBeVisible({ timeout: 45_000 });

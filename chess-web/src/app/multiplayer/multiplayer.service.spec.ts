@@ -423,7 +423,7 @@ describe('multiplayer event reconciliation', () => {
     service.disconnect();
   });
 
-  it('preserves an active game and reconnect credential on temporary disconnect', () => {
+  it('preserves an active game and credential and re-emits the unchanged recovered snapshot', () => {
     const fixture = foolsMateFixture();
     const service = serviceWithState(fixture.initial);
     (service as any).currentGameId = fixture.initial.gameId;
@@ -436,12 +436,18 @@ describe('multiplayer event reconciliation', () => {
     expect(window.sessionStorage.getItem('onlineReconnect')).toBe('online-token');
     expect((service as any).ignoredGameIds.has(fixture.initial.gameId)).toBe(false);
 
+    const recoveredStates = vi.fn();
+    service.gameState$.subscribe(recoveredStates);
+    recoveredStates.mockClear();
     (service as any).awaitingRecoverySnapshot = true;
     service.connectionState$.next('RECOVERING_GAME');
     (service as any).handleGameStateSync({ state: fixture.initial });
+
     expect(service.connectionState$.value).toBe('READY');
     expect(service.ready$.value).toBe(true);
     expect(service.gameState$.value?.gameId).toBe(fixture.initial.gameId);
+    expect(recoveredStates).toHaveBeenCalledOnce();
+    expect(recoveredStates).toHaveBeenCalledWith(fixture.initial);
   });
 
   it('cleans up a closed room once and keeps the reason for the user', () => {
