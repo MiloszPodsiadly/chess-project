@@ -24,7 +24,7 @@ export default defineConfig({
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
     screenshot: 'only-on-failure',
-    trace: 'off'
+    trace: 'retain-on-failure'
   },
   webServer: useLocalFrontend
     ? {

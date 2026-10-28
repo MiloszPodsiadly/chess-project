@@ -31,13 +31,10 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
   const pageErrors = [];
   let roomCreated = false;
   let gameStarted = false;
-  let runFailure;
-  let failureArtifactsCaptured = false;
 
   const openOnline = async (name) => {
     const context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
     contexts.push(context);
-    await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
     await context.addInitScript((username) => sessionStorage.setItem('onlineUsername', username), name);
     const page = await context.newPage();
     const networkEvents = [];
@@ -50,9 +47,11 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await page.goto('/');
     await page.locator('.hero-actions').getByRole('link', { name: 'Play Online', exact: true }).click();
     await expect(page.getByRole('tab', { name: 'Create', exact: true })).toBeVisible();
-    await expect(page.locator('.settings-card .connection-banner').first()).toContainText('Connected', {
-      timeout: 45_000
-    });
+    await expect.poll(
+      () => networkEvents.some(event => event.direction === 'received' && event.eventType === 'helloAck'),
+      { timeout: 45_000 }
+    ).toBe(true);
+    await expect(page.getByText('Connected', { exact: true })).toHaveCount(0);
     await expect(page.locator('.online-player-status strong')).toHaveText(name);
     return page;
   };
@@ -80,6 +79,10 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
 
     await expect(roomChat(host)).toHaveCount(0);
     await host.getByRole('tab', { name: 'Create', exact: true }).click();
+    const publicRoomCheckbox = host.locator('#online-panel-create input[type="checkbox"]');
+    await publicRoomCheckbox.uncheck();
+    await expect(host.getByLabel('Room password')).toHaveAttribute('type', 'password');
+    await publicRoomCheckbox.check();
     await host.getByLabel('Room name').fill(roomName);
     await host.getByRole('tabpanel', { name: 'Create' }).getByRole('button', {
       name: 'Create room', exact: true
@@ -94,6 +97,7 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await expect(roomChat(host)).toBeVisible();
 
     await guest.getByRole('tab', { name: 'Join', exact: true }).click();
+    await expect(guest.getByLabel('Join password')).toHaveAttribute('type', 'password');
     await guest.getByLabel('Room code').fill(roomCode);
     await guest.getByRole('tabpanel', { name: 'Join' }).getByRole('button', {
       name: 'Join room', exact: true
@@ -173,6 +177,22 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
     await expect(guest.locator('#multiplayer-review-history')).toBeVisible();
     await expect(guest.locator('#multiplayer-review-history')).toContainText('e4');
     await expect(guest.locator('#multiplayer-review-history')).toContainText('e5');
+    const replay = guest.locator('#multiplayer-review-history app-move-history');
+    await expect(replay.getByRole('button', { name: 'Last', exact: true })).toBeDisabled();
+    await replay.getByRole('button', { name: 'First', exact: true }).click();
+    await expect(guest.getByRole('button', { name: 'e2', exact: true }).locator('img')).toBeVisible();
+    await expect(guest.getByRole('button', { name: 'e4', exact: true }).locator('img')).toHaveCount(0);
+    await replay.getByRole('button', { name: 'Next', exact: true }).click();
+    await expect(guest.getByRole('button', { name: 'e4', exact: true }).locator('img')).toBeVisible();
+    await expect(replay.locator('.move-cell.active')).toHaveText('e4');
+    await replay.getByRole('button', { name: 'Last', exact: true }).click();
+    await expect(guest.getByRole('button', { name: 'e5', exact: true }).locator('img')).toBeVisible();
+    await expect(replay.locator('.move-cell.active')).toHaveText('e5');
+    await expect(replay.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
+    await spectator.getByRole('button', { name: 'Review Game', exact: true }).click();
+    await expect(spectator.locator('#multiplayer-review-history')).toBeVisible();
+    await expect(spectator.locator('#multiplayer-review-history app-move-history'))
+      .toContainText('2 / 2');
     expect(pageErrors).toEqual([]);
 
     await testInfo.attach('multiplayer-smoke-summary', {
@@ -183,14 +203,13 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
           'chat absent before membership', 'host create and manage room', 'guest join and participant sync',
           'bidirectional room chat', 'opposite player colors', 'e2-e4 and e7-e5 synchronized on both clients',
           'wrong-turn move rejected', 'spectator remains read-only', 'resignation reaches both clients',
-          'finished game review shows move history'
+          'finished game review replays board positions with navigation for a player and spectator'
         ],
         pageErrors
       }, null, 2)),
       contentType: 'application/json'
     });
   } catch (error) {
-    runFailure = error;
     const diagnostics = [];
     for (const client of clients) {
       if (client.page.isClosed()) continue;
@@ -205,13 +224,6 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
       body: Buffer.from(JSON.stringify(diagnostics, null, 2)),
       contentType: 'application/json'
     });
-    for (let index = 0; index < contexts.length; index += 1) {
-      const client = clients[index];
-      await contexts[index].tracing.stop({
-        path: testInfo.outputPath(`${client?.name ?? `client-${index}`}-trace.zip`)
-      }).catch(() => {});
-    }
-    failureArtifactsCaptured = true;
     throw error;
   } finally {
     const [host, guest, spectator] = clients.map((client) => client.page);
@@ -234,14 +246,12 @@ test('two players and a spectator complete a real multiplayer game', async ({ br
       await page.getByRole('tab', { name: 'Manage', exact: true }).click({ timeout: 2_000 }).catch(() => {});
       await page.getByRole('button', { name: 'Leave room', exact: true }).click({ timeout: 2_000 }).catch(() => {});
     }
+    if (gameStarted && host && !host.isClosed()) {
+      await host.getByRole('button', { name: 'Back to lobby', exact: true }).click({ timeout: 2_000 }).catch(() => {});
+    }
 
     for (let index = 0; index < contexts.length; index += 1) {
       const context = contexts[index];
-      if (runFailure && !failureArtifactsCaptured) {
-        await context.tracing.stop({ path: testInfo.outputPath(`client-${index}-trace.zip`) }).catch(() => {});
-      } else {
-        if (!runFailure) await context.tracing.stop().catch(() => {});
-      }
       await context.close().catch(() => {});
     }
   }

@@ -37,7 +37,7 @@ npm run test:e2e:multiplayer
 
 The backend must be reachable at `http://localhost:8080`; the default test frontend uses `http://localhost:4200` because the multiplayer transport resolves the local Spring endpoint from that origin. To run the same smoke test against the Docker app on port 3000, set `$env:MULTIPLAYER_BASE_URL = 'http://localhost:3000'` before invoking `npm run test:e2e:multiplayer`. The test uses randomly named rooms and players.
 
-Playwright writes its HTML report to `chess-web/playwright-report/`. On failure it saves a screenshot and a trace for each browser context under `chess-web/test-results/multiplayer/`; open a trace with `npx playwright show-trace <trace.zip>`.
+Playwright writes its HTML report to `chess-web/playwright-report/`. On failure it saves screenshots, a trace, and UI diagnostics under `chess-web/test-results/multiplayer/`; open a trace with `npx playwright show-trace <trace.zip>`.
 
 ## Coverage boundary
 
