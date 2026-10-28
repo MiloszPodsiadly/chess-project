@@ -10,6 +10,12 @@ export interface MoveView {
   promotion?: string;
 }
 
+export interface ExternalMove {
+  from: string;
+  to: string;
+  promotion?: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class GameStateService {
   private static nextSession = 0;
@@ -39,7 +45,7 @@ export class GameStateService {
     this.updatePositionAnnotations();
   }
 
-  loadExternalState(fen: string, moves: MoveView[], sideToMove: 'w' | 'b') {
+  loadExternalState(fen: string, moves: ExternalMove[], sideToMove: 'w' | 'b'): MoveView[] {
     const replay = new Chess();
     for (const move of moves) {
       try {
@@ -69,6 +75,7 @@ export class GameStateService {
     this.legalMoves$.next([]);
     this.lastMove$.next(validatedMoves.length > 0 ? validatedMoves[validatedMoves.length - 1] : null);
     this.updatePositionAnnotations();
+    return validatedMoves;
   }
 
   selectSquare(square: string) {

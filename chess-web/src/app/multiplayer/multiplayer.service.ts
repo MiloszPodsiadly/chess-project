@@ -47,6 +47,7 @@ export class MultiplayerService {
   private lobbySubscription: StompSubscription | null = null;
   private connectionUsername: string | null = null;
   private pendingRoomJoinCode: string | null = null;
+  private pendingRoomSpectateCode: string | null = null;
   private currentReconnectToken: string | null = this.readSessionValue('onlineReconnect');
   private currentRoomReconnectToken: string | null = this.readSessionValue('roomReconnectToken');
   private reconnectAttempts = 0;
@@ -162,9 +163,6 @@ export class MultiplayerService {
       return;
     }
     this.pendingRoomJoinCode = normalized;
-    // Subscribe before publishing joinRoom so the first participant broadcast cannot race
-    // ahead of the new client's room-topic subscription.
-    if (!activeRoom) this.subscribeRoomTopic(normalized);
     this.send('joinRoom', { roomCode: normalized, password: password ?? null, inviteToken: inviteToken ?? null });
   }
 
@@ -235,8 +233,15 @@ export class MultiplayerService {
   }
 
   spectateRoom(roomCode: string) {
-    this.send('spectateRoom', { roomCode });
-    this.setActiveRoom(roomCode);
+    const normalized = roomCode?.trim()?.toUpperCase();
+    if (!normalized) return;
+    const activeRoom = this.activeRoomCode$.value;
+    if (activeRoom && activeRoom !== normalized) {
+      this.lastError$.next('already_in_room');
+      return;
+    }
+    this.pendingRoomSpectateCode = normalized;
+    this.send('spectateRoom', { roomCode: normalized });
   }
 
   sendRoomMessage(roomCode: string, message: string) {
@@ -359,11 +364,19 @@ export class MultiplayerService {
       case 'roomRecovery': {
         const credential = event.payload as RoomRecoveryCredential;
         if (credential?.roomCode && credential.reconnectToken) {
+          const normalized = credential.roomCode.trim().toUpperCase();
+          const pendingRoom = this.pendingRoomJoinCode ?? this.pendingRoomSpectateCode;
+          if (pendingRoom && pendingRoom !== normalized) break;
           this.pendingRoomJoinCode = null;
-          this.setActiveRoom(credential.roomCode);
+          this.pendingRoomSpectateCode = null;
+          if (this.activeRoomCode$.value === normalized) {
+            this.subscribeRoomTopic(normalized);
+            this.roomHistory(normalized);
+            this.roomParticipants(normalized);
+          } else {
+            this.setActiveRoom(normalized);
+          }
           this.setRoomReconnectToken(credential.reconnectToken);
-          this.roomHistory(credential.roomCode);
-          this.roomParticipants(credential.roomCode);
         }
         break;
       }
@@ -375,6 +388,16 @@ export class MultiplayerService {
         }
         this.pendingRoomJoinCode = null;
         this.lastError$.next(String(event.payload ?? 'room_join_failed'));
+        break;
+      }
+      case 'roomSpectateFailed': {
+        const pendingRoom = this.pendingRoomSpectateCode;
+        if (pendingRoom && this.activeRoomCode$.value !== pendingRoom
+            && this.roomSubscriptionCode === pendingRoom) {
+          this.unsubscribeRoomTopic();
+        }
+        this.pendingRoomSpectateCode = null;
+        this.lastError$.next(String(event.payload ?? 'room_spectate_failed'));
         break;
       }
       case 'helloAck':
@@ -478,9 +501,6 @@ export class MultiplayerService {
       }
       case 'roomInviteFailed':
         this.lastError$.next(String(event.payload ?? 'room_invite_failed'));
-        break;
-      case 'roomSpectateFailed':
-        this.lastError$.next(String(event.payload ?? 'room_spectate_failed'));
         break;
       case 'roomKickFailed':
         this.lastError$.next(String(event.payload ?? 'room_kick_failed'));
@@ -1004,6 +1024,8 @@ export class MultiplayerService {
 
   private clearActiveRoom() {
     this.unsubscribeRoomTopic();
+    this.pendingRoomJoinCode = null;
+    this.pendingRoomSpectateCode = null;
     this.setRoomReconnectToken(null);
     this.writeSessionValue('roomRecoveryRoomCode', null);
     this.activeRoomCode$.next(null);

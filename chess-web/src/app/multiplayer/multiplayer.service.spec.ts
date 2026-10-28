@@ -209,7 +209,7 @@ describe('multiplayer event reconciliation', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('subscribes to the room topic before requesting to join so the first roster event is received', () => {
+  it('waits for authoritative membership before subscribing to a joined room', () => {
     window.sessionStorage.removeItem('roomRecoveryRoomCode');
     window.sessionStorage.removeItem('roomReconnectToken');
     const service = new MultiplayerService();
@@ -221,8 +221,56 @@ describe('multiplayer event reconciliation', () => {
 
     service.joinRoom(' ab12cd ', ' secret ');
 
-    expect(order).toEqual(['subscribe', 'joinRoom']);
+    expect(order).toEqual(['joinRoom']);
     expect(service.activeRoomCode$.value).toBeNull();
+    expect((service as any).pendingRoomJoinCode).toBe('AB12CD');
+
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'roomRecovery', payload: {
+      roomCode: 'AB12CD', reconnectToken: 'approved-token'
+    } }) });
+
+    expect(order).toEqual(['joinRoom', 'subscribe', 'history', 'participants']);
+    expect(service.activeRoomCode$.value).toBe('AB12CD');
+    expect((service as any).pendingRoomJoinCode).toBeNull();
+  });
+
+  it('does not mark a spectator room active until the server confirms access', () => {
+    window.sessionStorage.removeItem('roomRecoveryRoomCode');
+    window.sessionStorage.removeItem('roomReconnectToken');
+    const service = new MultiplayerService();
+    const order: string[] = [];
+    vi.spyOn(service as any, 'subscribeRoomTopic').mockImplementation(() => order.push('subscribe'));
+    vi.spyOn(service as any, 'roomHistory').mockImplementation(() => order.push('history'));
+    vi.spyOn(service as any, 'roomParticipants').mockImplementation(() => order.push('participants'));
+    vi.spyOn(service as any, 'send').mockImplementation((...args: unknown[]) => { order.push(String(args[0])); });
+
+    service.spectateRoom(' ab12cd ');
+
+    expect(order).toEqual(['spectateRoom']);
+    expect(service.activeRoomCode$.value).toBeNull();
+    expect((service as any).pendingRoomSpectateCode).toBe('AB12CD');
+
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'roomRecovery', payload: {
+      roomCode: 'AB12CD', reconnectToken: 'spectator-token'
+    } }) });
+
+    expect(order).toEqual(['spectateRoom', 'subscribe', 'history', 'participants']);
+    expect(service.activeRoomCode$.value).toBe('AB12CD');
+    expect((service as any).pendingRoomSpectateCode).toBeNull();
+  });
+
+  it('keeps a rejected spectator request out of active room state', () => {
+    window.sessionStorage.removeItem('roomRecoveryRoomCode');
+    window.sessionStorage.removeItem('roomReconnectToken');
+    const service = new MultiplayerService();
+    vi.spyOn(service as any, 'send').mockImplementation(() => undefined);
+    service.spectateRoom('ROOM1');
+
+    (service as any).handleMessage({ body: JSON.stringify({ type: 'roomSpectateFailed', payload: 'room_closed' }) });
+
+    expect(service.activeRoomCode$.value).toBeNull();
+    expect(service.lastError$.value).toBe('room_closed');
+    expect((service as any).pendingRoomSpectateCode).toBeNull();
   });
 
   it('clears pending join state when the server rejects a join', () => {

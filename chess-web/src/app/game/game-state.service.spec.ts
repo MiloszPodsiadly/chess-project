@@ -36,4 +36,18 @@ describe('GameStateService check annotations', () => {
     expect(state.positionStatus$.value).toBe('CHECK');
     expect(state.checkedKingSquare$.value).toBe('e1');
   });
+
+  it('reconstructs move notation from server coordinates in the state owner', () => {
+    const source = new Chess();
+    for (const san of ['e4', 'e5', 'Nf3', 'Nc6']) source.move(san);
+    const externalMoves = source.history({ verbose: true }).map(move => ({
+      from: move.from, to: move.to, promotion: move.promotion
+    }));
+    const state = new GameStateService();
+
+    const history = state.loadExternalState(source.fen(), externalMoves, source.turn());
+
+    expect(history.map(move => move.san)).toEqual(['e4', 'e5', 'Nf3', 'Nc6']);
+    expect(state.moves$.value).toEqual(history);
+  });
 });
